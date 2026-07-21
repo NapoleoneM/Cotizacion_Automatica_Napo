@@ -23,6 +23,7 @@
   <nav class="tabs" id="tabs">
     <button class="tab activa" data-vista="retail">Retail</button>
     <button class="tab" data-vista="mayorista">Mayorista</button>
+    <button class="tab" data-vista="tienda">Valor Tienda</button>
     <button class="tab" data-vista="tabla">Tabla de precios</button>
   </nav>
 
@@ -93,6 +94,30 @@
     <button class="btn-accion" id="calc-mayorista">CALCULAR COTIZACIÓN MAYORISTA</button>
     <pre class="resultado" id="res-mayorista"></pre>
     <button class="btn-copiar" data-target="res-mayorista">📄 Copiar mensaje para WhatsApp</button>
+  </section>
+
+  <!-- ================= VALOR TIENDA ================= -->
+  <section class="vista" id="vista-tienda">
+    <div class="tarjeta estado-precios">
+      <span id="estado-tienda" class="estado-txt">Cargando precios…</span>
+      <button class="btn-verde" id="actualizar-tienda">Actualizar precios</button>
+    </div>
+
+    <div class="tarjeta opciones">
+      <div class="fila-opcion">
+        <label class="etq">⚖️ Peso (gr):</label>
+        <input type="text" id="tienda-peso" class="peso" placeholder="Peso" inputmode="decimal">
+      </div>
+      <div class="fila-opcion">
+        <label class="etq">🥇 Calidad:</label>
+        <select id="tienda-calidad"><option value="">Cargando…</option></select>
+      </div>
+    </div>
+
+    <div class="tarjeta">
+      <div class="tarjeta-titulo">💲 Precio sugerido para tienda</div>
+      <pre class="resultado" id="res-tienda">Ingrese peso y calidad.</pre>
+    </div>
   </section>
 
   <!-- ================= TABLA DE PRECIOS ================= -->

@@ -220,19 +220,62 @@ async function calcularMayorista() {
 }
 
 async function actualizarPrecios() {
-  const btn = $("#actualizar-precios"); btn.disabled = true; btn.textContent = "Conectando…";
+  const btns = $$("#actualizar-precios, #actualizar-tienda");
+  btns.forEach(b => { b.disabled = true; b.textContent = "Conectando…"; });
   $("#estado-precios").textContent = "⏳ Conectando con Google Sheets…";
+  $("#estado-tienda").textContent = "⏳ Conectando con Google Sheets…";
   try {
     const d = await (await fetch("/api/actualizar-precios", { method: "POST" })).json();
-    if (d.error) $("#estado-precios").textContent = "❌ " + d.error;
-    else {
+    if (d.error) {
+      $("#estado-precios").textContent = "❌ " + d.error;
+      $("#estado-tienda").textContent = "❌ " + d.error;
+    } else {
       $("#estado-precios").textContent = `✅ Precios actualizados: ${d.hora}`;
+      $("#estado-tienda").textContent = `✅ Precios actualizados: ${d.hora}`;
       const falt = d.tarifas_faltantes || [];
       $("#aviso-tarifas").style.display = falt.length ? "" : "none";
       $("#aviso-tarifas").textContent = falt.length ? "⚠️ Tarifas sin valor en el Sheet: " + falt.join(", ") : "";
+      poblarCalidadesTienda(d.calidades_tienda || []);
       calcularMayorista();
     }
-  } finally { btn.disabled = false; btn.textContent = "Actualizar precios"; }
+  } finally { btns.forEach(b => { b.disabled = false; b.textContent = "Actualizar precios"; }); }
+}
+
+// =====================================================
+// VALOR TIENDA
+// =====================================================
+const calcTiendaDeb = debounce(calcularTienda);
+
+$("#actualizar-tienda").onclick = actualizarPrecios;
+$("#tienda-peso").addEventListener("input", () => {
+  $("#tienda-peso").value = $("#tienda-peso").value.replace(/[^\d.,]/g, "");
+  calcTiendaDeb();
+});
+$("#tienda-calidad").onchange = calcTiendaDeb;
+
+function poblarCalidadesTienda(calidades) {
+  const sel = $("#tienda-calidad");
+  const actual = sel.value;
+  sel.innerHTML = "";
+  if (!calidades.length) { sel.add(new Option("Sin datos", "")); return; }
+  calidades.forEach(c => sel.add(new Option(c, c)));
+  if (calidades.includes(actual)) sel.value = actual;
+  calcTiendaDeb();
+}
+
+async function calcularTienda() {
+  const peso = $("#tienda-peso").value.trim();
+  const calidad = $("#tienda-calidad").value;
+  if (!peso || !calidad) {
+    $("#res-tienda").textContent = "Ingrese peso y calidad.";
+    return;
+  }
+  const r = await fetch("/api/precio-tienda", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ peso, calidad }),
+  });
+  const d = await r.json();
+  $("#res-tienda").textContent = d.error ? "⚠️ " + d.error : `$${d.precio.toLocaleString("es-CO").replace(/,/g, ".")}`;
 }
 
 // =====================================================
@@ -312,8 +355,13 @@ nuevaFilaMay();
   const e = await (await fetch("/api/estado-precios")).json();
   if (e.cargado) {
     $("#estado-precios").textContent = `✅ Precios actualizados: ${e.hora}`;
+    $("#estado-tienda").textContent = `✅ Precios actualizados: ${e.hora}`;
     const falt = e.tarifas_faltantes || [];
     if (falt.length) { $("#aviso-tarifas").style.display = ""; $("#aviso-tarifas").textContent = "⚠️ Tarifas sin valor: " + falt.join(", "); }
+    poblarCalidadesTienda(e.calidades_tienda || []);
     calcularMayorista();
-  } else $("#estado-precios").textContent = "⚠️ Precios no cargados. Presione 'Actualizar precios'.";
+  } else {
+    $("#estado-precios").textContent = "⚠️ Precios no cargados. Presione 'Actualizar precios'.";
+    $("#estado-tienda").textContent = "⚠️ Precios no cargados. Presione 'Actualizar precios'.";
+  }
 })();

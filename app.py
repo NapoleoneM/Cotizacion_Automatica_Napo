@@ -22,6 +22,7 @@ from pydantic import BaseModel
 from core.cotizacion_logic import calcular_cotizacion
 from core.mayorista_logic import obtener_precios_sheets, calcular_cotizacion_mayorista
 from core.tabla_precios import obtener_tabla_precios
+from core.tienda_logic import obtener_tarifas_gramo, calcular_precio_tienda
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger("calculadora_napo")
@@ -32,7 +33,7 @@ STATIC = os.path.join(BASE, "static")
 app = FastAPI(title="Calculadora Napo Web", version="2.0.1-web")
 
 # --- Caché de precios en memoria (compartida por todos los usuarios) ---
-_precios = {"datos": None, "hora": None, "tarifas_faltantes": []}
+_precios = {"datos": None, "hora": None, "tarifas_faltantes": [], "tarifas_gramo": None, "calidades_tienda": []}
 
 
 def ruta_credenciales():
@@ -101,6 +102,11 @@ class MayoristaReq(BaseModel):
     envio_manual: str = ""
 
 
+class PrecioTiendaReq(BaseModel):
+    peso: str = ""
+    calidad: str = ""
+
+
 # =======================================================
 # ENDPOINTS DE CÁLCULO
 # =======================================================
@@ -157,6 +163,7 @@ def estado_precios():
         "cargado": _precios["datos"] is not None,
         "hora": _precios["hora"],
         "tarifas_faltantes": _precios["tarifas_faltantes"],
+        "calidades_tienda": _precios["calidades_tienda"],
     }
 
 
@@ -168,7 +175,31 @@ def actualizar_precios():
     _precios["datos"] = res["datos"]
     _precios["hora"] = datetime.now().strftime("%d/%m/%Y %I:%M %p")
     _precios["tarifas_faltantes"] = res.get("tarifas_faltantes") or []
-    return {"ok": True, "hora": _precios["hora"], "tarifas_faltantes": _precios["tarifas_faltantes"]}
+
+    # Tarifas de tienda (tarifas_gramo): no crítico si falla — Mayorista sigue
+    # funcionando aunque la hoja aún no exista en el espejo.
+    res_tienda = obtener_tarifas_gramo(ruta_credenciales())
+    if "exito" in res_tienda:
+        _precios["tarifas_gramo"] = res_tienda["tarifas"]
+        _precios["calidades_tienda"] = res_tienda["calidades"]
+    else:
+        _precios["tarifas_gramo"] = None
+        _precios["calidades_tienda"] = []
+        log.warning("No se pudieron cargar tarifas_gramo: %s", res_tienda.get("error"))
+
+    return {
+        "ok": True, "hora": _precios["hora"], "tarifas_faltantes": _precios["tarifas_faltantes"],
+        "calidades_tienda": _precios["calidades_tienda"],
+    }
+
+
+@app.post("/api/precio-tienda")
+def api_precio_tienda(req: PrecioTiendaReq):
+    if not _precios["tarifas_gramo"]:
+        return {"error": "Tarifas no cargadas. Presione 'Actualizar precios'."}
+    if not req.calidad:
+        return {"error": "Seleccione una calidad."}
+    return calcular_precio_tienda(req.peso, req.calidad, _precios["tarifas_gramo"])
 
 
 @app.get("/api/tabla")
