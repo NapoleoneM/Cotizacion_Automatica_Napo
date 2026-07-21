@@ -1,0 +1,16 @@
+services:
+  calculadora:
+    build: .
+    image: calculadora-napo-web
+    container_name: calculadora-napo
+    restart: unless-stopped
+    ports:
+      # host:contenedor — el proxy inverso del VPS enruta el subdominio a 8010.
+      # Cambia 8010 si ese puerto ya está ocupado por otro proyecto.
+      - "8010:8000"
+    volumes:
+      # Credenciales del service account SOLO en el servidor (solo lectura).
+      # Coloca credenciales.json en ./credentials/ junto a este archivo.
+      - ./credentials:/app/credentials:ro
+    environment:
+      - TZ=America/Bogota

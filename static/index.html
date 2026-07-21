@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="es" data-tema="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Calculadora Napo</title>
+  <link rel="icon" href="/img/favicon.ico">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header class="cabecera">
+    <img id="logo" class="logo" alt="Napoleone">
+    <div class="titulo-bloque">
+      <h1 id="titulo-app">Calculadora Napo</h1>
+      <p class="subtitulo">Napoleone Joyas · Cotizaciones Retail y Mayorista</p>
+    </div>
+    <div class="toggle-tema" id="toggle-tema">
+      <button data-tema="light" title="Tema claro">☀</button>
+      <button data-tema="dark" title="Tema oscuro">🌙</button>
+    </div>
+  </header>
+
+  <nav class="tabs" id="tabs">
+    <button class="tab activa" data-vista="retail">Retail</button>
+    <button class="tab" data-vista="mayorista">Mayorista</button>
+    <button class="tab" data-vista="tabla">Tabla de precios</button>
+  </nav>
+
+  <!-- ================= RETAIL ================= -->
+  <section class="vista activa" id="vista-retail">
+    <div class="tarjeta">
+      <div class="tarjeta-titulo">🗒️ Joyas a cotizar</div>
+      <div id="filas-retail" class="filas"></div>
+      <button class="btn-oro" id="add-retail">+ Agregar joya</button>
+    </div>
+
+    <div class="tarjeta opciones">
+      <div class="fila-opcion">
+        <label class="etq">🚚 Envío:</label>
+        <label class="chk"><input type="checkbox" id="ret-envio-chk"> Agregar envío</label>
+        <select id="ret-envio-tipo" disabled>
+          <option>Local (Medellín)</option>
+          <option>Local (Área Metropolitana)</option>
+          <option>Nacional</option>
+          <option>Internacional</option>
+        </select>
+        <input type="text" id="ret-envio-manual" class="dinero" placeholder="Valor envío intl." style="display:none">
+      </div>
+      <div class="fila-opcion">
+        <label class="etq">💳 Pago:</label>
+        <select id="ret-pago">
+          <option>Transferencia</option><option>Addi</option><option>Sistecredito</option>
+          <option>Contra Entrega</option><option>T. Crédito/Débito</option>
+        </select>
+      </div>
+    </div>
+
+    <button class="btn-accion" id="calc-retail">CALCULAR COTIZACIÓN</button>
+    <pre class="resultado" id="res-retail"></pre>
+    <button class="btn-copiar" data-target="res-retail">📄 Copiar mensaje para WhatsApp</button>
+  </section>
+
+  <!-- ================= MAYORISTA ================= -->
+  <section class="vista" id="vista-mayorista">
+    <div class="tarjeta estado-precios">
+      <span id="estado-precios" class="estado-txt">Cargando precios…</span>
+      <button class="btn-verde" id="actualizar-precios">Actualizar precios</button>
+    </div>
+    <div id="aviso-tarifas" class="aviso" style="display:none"></div>
+
+    <div class="tarjeta">
+      <div class="tarjeta-titulo">🗒️ Artículos a cotizar</div>
+      <div id="filas-mayorista" class="filas"></div>
+      <div id="filas-otros" class="filas"></div>
+      <div class="barra-add">
+        <button class="btn-oro" id="add-mayorista">+ Agregar joya</button>
+        <button class="btn-naranja" id="add-otro">+ Agregar otro artículo</button>
+        <span id="aviso-incompletas" class="aviso-inline"></span>
+      </div>
+    </div>
+
+    <div class="tarjeta opciones">
+      <div class="fila-opcion">
+        <label class="etq">🚚 Envío:</label>
+        <label class="chk"><input type="checkbox" id="may-envio-chk"> Agregar envío</label>
+        <select id="may-envio-tipo" disabled>
+          <option>Nacional</option><option>Internacional</option>
+        </select>
+        <input type="text" id="may-envio-manual" class="dinero" placeholder="Valor manual" style="display:none">
+      </div>
+    </div>
+
+    <button class="btn-accion" id="calc-mayorista">CALCULAR COTIZACIÓN MAYORISTA</button>
+    <pre class="resultado" id="res-mayorista"></pre>
+    <button class="btn-copiar" data-target="res-mayorista">📄 Copiar mensaje para WhatsApp</button>
+  </section>
+
+  <!-- ================= TABLA DE PRECIOS ================= -->
+  <section class="vista" id="vista-tabla">
+    <div class="tarjeta estado-precios">
+      <span id="estado-tabla" class="estado-txt">La tabla se descarga al abrir esta pestaña.</span>
+      <button class="btn-verde" id="actualizar-tabla">Actualizar tabla</button>
+    </div>
+    <div class="marco-tabla">
+      <canvas id="canvas-tabla"></canvas>
+    </div>
+  </section>
+
+  <footer class="creditos" id="creditos" hidden>
+    Desarrollado por
+    <a href="https://www.instagram.com/camilo_gra67" target="_blank" rel="noopener">@camilo_gra67</a>
+  </footer>
+
+  <script src="/app.js"></script>
+</body>
+</html>

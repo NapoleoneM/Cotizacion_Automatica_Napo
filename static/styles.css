@@ -1,0 +1,111 @@
+/* Calculadora Napo — Web. Tema claro/oscuro con variables CSS. */
+:root {
+  --oro: #C9A227; --oro-hover: #A8861C; --oro-texto: #1A1208;
+  --rojo: #c0392b; --verde: #27ae60; --naranja: #e67e22;
+  --fuente: "Segoe UI", system-ui, Arial, sans-serif;
+}
+html[data-tema="dark"] {
+  --fondo: #1b1b1b; --card: #252525; --card-int: #2f2f2f;
+  --texto: #EAEAEA; --texto-suave: #9A9A9A; --borde: #3a3a3a;
+  --campo: #333; --gris-btn: #3B3B3B;
+}
+html[data-tema="light"] {
+  --fondo: #f0f0f0; --card: #EAEAEA; --card-int: #DDDDDD;
+  --texto: #1A1A1A; --texto-suave: #5A5A5A; --borde: #cccccc;
+  --campo: #ffffff; --gris-btn: #3B3B3B;
+}
+
+* { box-sizing: border-box; }
+body {
+  margin: 0; font-family: var(--fuente); background: var(--fondo); color: var(--texto);
+  max-width: 720px; margin: 0 auto; padding: 10px 14px 30px;
+}
+
+/* Encabezado */
+.cabecera { display: flex; align-items: center; gap: 12px; padding: 8px 2px; }
+.logo { width: 42px; height: 52px; object-fit: contain; }
+.titulo-bloque { flex: 1; }
+h1 { font-size: 22px; margin: 0; }
+.subtitulo { margin: 2px 0 0; font-size: 12px; color: var(--texto-suave); }
+.toggle-tema { display: flex; background: var(--card-int); border-radius: 7px; padding: 2px; }
+.toggle-tema button {
+  border: 0; background: transparent; color: var(--texto); width: 30px; height: 26px;
+  border-radius: 6px; cursor: pointer; font-size: 14px;
+}
+.toggle-tema button.activo { background: var(--oro); color: var(--oro-texto); }
+
+/* Tabs */
+.tabs { display: flex; justify-content: center; gap: 4px; background: var(--card-int);
+  border-radius: 8px; padding: 4px; margin: 6px 0 10px; }
+.tab { flex: 1; border: 0; background: transparent; color: var(--texto); padding: 7px;
+  border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 600; }
+.tab.activa { background: var(--oro); color: var(--oro-texto); }
+
+.vista { display: none; }
+.vista.activa { display: block; }
+
+/* Tarjetas */
+.tarjeta { background: var(--card); border-radius: 8px; padding: 10px; margin-bottom: 8px; }
+.tarjeta-titulo { font-weight: bold; font-size: 13px; margin-bottom: 8px; }
+.filas { display: flex; flex-direction: column; gap: 6px; }
+
+/* Filas de artículos */
+.fila { background: var(--card-int); border-radius: 8px; padding: 8px; }
+.fila-linea { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.fila .idx { color: var(--oro); font-weight: bold; font-size: 12px; min-width: 52px; }
+.fila input, .fila select, .opciones input, .opciones select {
+  background: var(--campo); color: var(--texto); border: 1px solid var(--borde);
+  border-radius: 6px; height: 30px; padding: 0 8px; font-size: 13px; font-family: var(--fuente);
+}
+.fila input.nombre { flex: 1; min-width: 140px; }
+.fila input.dinero { width: 120px; }
+.fila input.peso { width: 90px; }
+
+/* Contador */
+.contador { display: inline-flex; align-items: center; background: var(--campo);
+  border: 1px solid var(--borde); border-radius: 6px; height: 30px; }
+.contador button { border: 0; background: transparent; color: var(--texto); width: 26px;
+  font-size: 15px; cursor: pointer; }
+.contador span { min-width: 22px; text-align: center; font-weight: bold; font-size: 13px; }
+
+.btn-x { border: 0; background: var(--rojo); color: #fff; width: 26px; height: 26px;
+  border-radius: 50%; cursor: pointer; font-size: 13px; line-height: 1; }
+
+/* Botones */
+.btn-oro, .btn-accion, .btn-naranja, .btn-verde, .btn-copiar {
+  border: 0; border-radius: 7px; cursor: pointer; font-weight: bold; font-family: var(--fuente);
+}
+.btn-oro { background: var(--oro); color: var(--oro-texto); padding: 7px 14px; font-size: 12px; margin-top: 8px; }
+.btn-naranja { background: var(--naranja); color: #241303; padding: 7px 14px; font-size: 12px; }
+.btn-verde { background: var(--verde); color: #10240F; padding: 7px 16px; font-size: 12px; }
+.btn-accion { display: block; width: 100%; max-width: 300px; margin: 8px auto; background: var(--oro);
+  color: var(--oro-texto); padding: 10px; font-size: 13px; }
+.btn-copiar { display: block; width: 100%; max-width: 300px; margin: 6px auto; background: var(--gris-btn);
+  color: #fff; padding: 9px; font-size: 12px; }
+.btn-oro:hover, .btn-accion:hover { background: var(--oro-hover); }
+
+.opciones .fila-opcion { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 6px 0; }
+.etq { font-weight: bold; font-size: 13px; display: inline-flex; align-items: center; gap: 6px; }
+.chk { font-size: 13px; display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
+.chk input[type="checkbox"] { width: 16px; height: 16px; margin: 0; accent-color: var(--oro); cursor: pointer; }
+
+/* Resultado */
+.resultado { background: var(--card); border: 1px solid var(--borde); border-radius: 8px;
+  padding: 12px; min-height: 120px; white-space: pre-wrap; font-family: Consolas, monospace;
+  font-size: 14px; margin: 4px 0; overflow-x: auto; }
+
+/* Estado precios / avisos */
+.estado-precios { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.estado-txt { font-size: 12px; font-weight: bold; }
+.aviso { background: rgba(230,126,34,.15); color: var(--naranja); border-radius: 6px;
+  padding: 6px 10px; font-size: 12px; margin-bottom: 8px; }
+.aviso-inline { color: var(--naranja); font-size: 12px; font-weight: bold; }
+.barra-add { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+
+/* Tabla de precios */
+.marco-tabla { background: var(--card); border-radius: 8px; padding: 8px; overflow: auto; max-height: 70vh; }
+#canvas-tabla { display: block; }
+
+/* Créditos */
+.creditos { text-align: center; color: var(--texto-suave); font-size: 11px; margin-top: 14px; }
+.creditos a { color: var(--oro); text-decoration: none; font-weight: bold; }
