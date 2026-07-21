@@ -230,8 +230,8 @@ async function actualizarPrecios() {
       $("#estado-precios").textContent = "❌ " + d.error;
       $("#estado-tienda").textContent = "❌ " + d.error;
     } else {
-      $("#estado-precios").textContent = `✅ Precios actualizados: ${d.hora}`;
-      $("#estado-tienda").textContent = `✅ Precios actualizados: ${d.hora}`;
+      $("#estado-precios").textContent = `Precios actualizados: ${d.hora}`;
+      $("#estado-tienda").textContent = `Precios actualizados: ${d.hora}`;
       const falt = d.tarifas_faltantes || [];
       $("#aviso-tarifas").style.display = falt.length ? "" : "none";
       $("#aviso-tarifas").textContent = falt.length ? "⚠️ Tarifas sin valor en el Sheet: " + falt.join(", ") : "";
@@ -339,6 +339,29 @@ function dibujarTabla(bloques) {
 }
 
 // =====================================================
+// COPIAR AL PORTAPAPELES
+// =====================================================
+$$(".btn-copiar").forEach(btn => {
+  btn.addEventListener("click", async () => {
+    const el = $("#" + btn.dataset.target);
+    const texto = (el.innerText ?? el.textContent ?? "").trim();
+    if (!texto) return;
+    try {
+      await navigator.clipboard.writeText(texto);
+    } catch {
+      const ta = document.createElement("textarea");
+      ta.value = texto; ta.style.position = "fixed"; ta.style.opacity = "0";
+      document.body.append(ta); ta.select();
+      document.execCommand("copy");
+      ta.remove();
+    }
+    const original = btn.textContent;
+    btn.textContent = "¡Copiado!";
+    setTimeout(() => { btn.textContent = original; }, 1500);
+  });
+});
+
+// =====================================================
 // CRÉDITOS OCULTOS (doble clic en el título)
 // =====================================================
 $("#titulo-app").addEventListener("dblclick", () => {
@@ -354,8 +377,8 @@ nuevaFilaMay();
 (async () => {
   const e = await (await fetch("/api/estado-precios")).json();
   if (e.cargado) {
-    $("#estado-precios").textContent = `✅ Precios actualizados: ${e.hora}`;
-    $("#estado-tienda").textContent = `✅ Precios actualizados: ${e.hora}`;
+    $("#estado-precios").textContent = `Precios actualizados: ${e.hora}`;
+    $("#estado-tienda").textContent = `Precios actualizados: ${e.hora}`;
     const falt = e.tarifas_faltantes || [];
     if (falt.length) { $("#aviso-tarifas").style.display = ""; $("#aviso-tarifas").textContent = "⚠️ Tarifas sin valor: " + falt.join(", "); }
     poblarCalidadesTienda(e.calidades_tienda || []);

@@ -57,7 +57,7 @@
     </div>
 
     <button class="btn-accion" id="calc-retail">CALCULAR COTIZACIÓN</button>
-    <pre class="resultado" id="res-retail"></pre>
+    <pre class="resultado editable" id="res-retail" contenteditable="true" spellcheck="false"></pre>
     <button class="btn-copiar" data-target="res-retail">📄 Copiar mensaje para WhatsApp</button>
   </section>
 
@@ -105,11 +105,11 @@
 
     <div class="tarjeta opciones">
       <div class="fila-opcion">
-        <label class="etq">⚖️ Peso (gr):</label>
+        <label class="etq">Peso (gr):</label>
         <input type="text" id="tienda-peso" class="peso" placeholder="Peso" inputmode="decimal">
       </div>
       <div class="fila-opcion">
-        <label class="etq">🥇 Calidad:</label>
+        <label class="etq">Tipo de material:</label>
         <select id="tienda-calidad"><option value="">Cargando…</option></select>
       </div>
     </div>

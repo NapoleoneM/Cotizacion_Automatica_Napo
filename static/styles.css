@@ -93,6 +93,8 @@ h1 { font-size: 22px; margin: 0; }
 .resultado { background: var(--card); border: 1px solid var(--borde); border-radius: 8px;
   padding: 12px; min-height: 120px; white-space: pre-wrap; font-family: Consolas, monospace;
   font-size: 14px; margin: 4px 0; overflow-x: auto; }
+.resultado.editable { cursor: text; }
+.resultado.editable:focus { outline: none; border-color: var(--oro); }
 
 /* Estado precios / avisos */
 .estado-precios { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
