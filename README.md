@@ -59,25 +59,22 @@ Abrir http://localhost:8000  (las credenciales se toman de `../credentials/` o d
 
 ## Despliegue en el VPS con Docker
 
-1. Subir la carpeta `Version_Web` al VPS y colocar `credenciales.json` en
-   `Version_Web/credentials/` (esa carpeta NO se sube a git ni se hornea en la
-   imagen; se monta como volumen de solo lectura).
-2. Construir y levantar:
+El VPS ya corre **Traefik** (proyecto `n8n`, red `n8n_default`) como proxy
+inverso para los demás sitios de Napoleone Joyas. Este proyecto se conecta a
+esa misma red por labels — sin publicar puertos al host, igual que
+`napoleone-pulseras` y los demás.
+
+1. Clonar el repo en el VPS (ej. `/root/calculadora-napo-web/`).
+2. Colocar `credenciales.json` en `./credentials/` (esa carpeta NO se sube a
+   git ni se hornea en la imagen; se monta como volumen de solo lectura).
+3. Construir y levantar:
    ```bash
    docker compose up -d --build
    ```
-   El contenedor queda escuchando en el puerto **8010** del host.
-3. **Subdominio + proxy inverso**: apuntar `calculadora.napoleonejoyas.tech` al
-   VPS (registro DNS A) y en el proxy inverso (nginx / Traefik / Caddy que ya use
-   el VPS para el dominio principal) enrutar ese subdominio a `localhost:8010`.
-   Ejemplo Nginx:
-   ```nginx
-   server {
-     server_name calculadora.napoleonejoyas.tech;
-     location / { proxy_pass http://127.0.0.1:8010; proxy_set_header Host $host; }
-   }
-   ```
-   Luego emitir el certificado HTTPS (certbot / el gestor del proxy).
+4. El DNS (`calculadora.napoleonejoyas.tech` → IP del VPS, registro A) y el
+   certificado HTTPS los resuelve Traefik automáticamente (labels
+   `traefik.enable`, `Host(...)`, `tls.certresolver=mytlschallenge` en
+   `docker-compose.yml`).
 
 ---
 
