@@ -270,7 +270,7 @@ async function calcularTienda() {
   const calidad = $("#tienda-calidad").value;
   const criterio = $("#criterio-tienda");
   if (!peso || !calidad) {
-    $("#res-tienda").textContent = "Ingrese peso y calidad.";
+    $("#res-tienda").textContent = "Ingrese peso y tipo de material.";
     criterio.style.display = "none";
     return;
   }
