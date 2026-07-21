@@ -48,16 +48,20 @@ def obtener_tarifas_gramo(ruta_credenciales):
             tarifas.append({"calidad": calidad, "peso_min": peso_min, "peso_max": peso_max, "valor_gr": valor_gr})
 
         if not tarifas:
-            return {"error": "La hoja 'tarifas_gramo' llegó vacía o con formato inesperado."}
+            log.warning("La hoja pricing_gramo llegó vacía o con formato inesperado")
+            return {"error": "Tarifas de tienda no disponibles."}
         calidades = sorted({t["calidad"] for t in tarifas})
         return {"exito": True, "tarifas": tarifas, "calidades": calidades}
     except gspread.exceptions.WorksheetNotFound:
-        return {"error": "No se encontró la hoja 'tarifas_gramo' en el documento espejo."}
+        log.warning("La hoja pricing_gramo no existe en el documento espejo")
+        return {"error": "Tarifas de tienda no disponibles."}
     except FileNotFoundError:
-        return {"error": "No se encontró el archivo de credenciales."}
-    except Exception as e:
-        log.warning("Fallo al leer tarifas_gramo", exc_info=True)
-        return {"error": f"Error al conectar con Sheets: {str(e)}"}
+        log.warning("No se encontró el archivo de credenciales para pricing_gramo")
+        return {"error": "Tarifas de tienda no disponibles."}
+    except Exception:
+        # El detalle (puede traer IDs/emails de la API de Google) solo al log.
+        log.warning("Fallo al leer pricing_gramo", exc_info=True)
+        return {"error": "Tarifas de tienda no disponibles."}
 
 
 def calcular_precio_tienda(peso_texto, calidad, tarifas):

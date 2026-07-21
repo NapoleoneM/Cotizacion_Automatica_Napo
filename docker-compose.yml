@@ -19,6 +19,12 @@ services:
       - "traefik.http.routers.calculadora.tls=true"
       - "traefik.http.routers.calculadora.tls.certresolver=mytlschallenge"
       - "traefik.http.services.calculadora.loadbalancer.server.port=8000"
+      # Refuerzo: máx ~10 peticiones/seg por IP (ráfagas de 30) y cuerpos de
+      # máximo 1 MB — frena floods y peticiones gigantes antes de llegar a la app.
+      - "traefik.http.middlewares.calculadora-ratelimit.ratelimit.average=10"
+      - "traefik.http.middlewares.calculadora-ratelimit.ratelimit.burst=30"
+      - "traefik.http.middlewares.calculadora-buffer.buffering.maxRequestBodyBytes=1048576"
+      - "traefik.http.routers.calculadora.middlewares=calculadora-ratelimit,calculadora-buffer"
 
 networks:
   n8n_default:
