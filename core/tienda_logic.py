@@ -1,11 +1,11 @@
 """Cálculo del precio de tienda (valor de página) por peso y calidad de oro.
 
 Replica el caso "Pesado" de la fórmula de Sheets: busca en la hoja
-tarifas_gramo la fila cuya calidad coincide y cuya banda de peso (peso_min <
+pricing_gramo la fila cuya calidad coincide y cuya banda de peso (peso_min <
 peso <= peso_max) contiene el peso ingresado, y calcula valor_gr * peso
 redondeado hacia arriba al millar — igual que REDONDEAR.MAS(...; -3).
 
-tarifas_gramo vive en el documento CORE; se espeja a este mismo documento
+pricing_gramo vive en el documento CORE; se espeja a este mismo documento
 espejo (mismo _SPREADSHEET_ID que mayorista_logic) para no darle acceso al
 CORE al service account de la app.
 """
@@ -16,7 +16,7 @@ import gspread
 from core.app_config import log
 from core.mayorista_logic import _SPREADSHEET_ID, limpiar_peso
 
-_HOJA_TARIFAS_GRAMO = "tarifas_gramo"
+_HOJA_TARIFAS_GRAMO = "pricing_gramo"
 _SCOPES = ["https://www.googleapis.com/auth/spreadsheets.readonly"]
 
 
