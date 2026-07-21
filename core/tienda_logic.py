@@ -64,6 +64,11 @@ def obtener_tarifas_gramo(ruta_credenciales):
         return {"error": "Tarifas de tienda no disponibles."}
 
 
+def _fmt_peso(n):
+    """1.0 -> '1', 1.5 -> '1.5' — para mostrar el rango sin ceros de más."""
+    return str(int(n)) if n == int(n) else str(n)
+
+
 def calcular_precio_tienda(peso_texto, calidad, tarifas):
     """Busca la banda de peso+calidad y redondea hacia arriba al millar."""
     peso = limpiar_peso(peso_texto)
@@ -72,5 +77,10 @@ def calcular_precio_tienda(peso_texto, calidad, tarifas):
     for t in tarifas or []:
         if t["calidad"] == calidad and peso > t["peso_min"] and peso <= t["peso_max"]:
             precio = math.ceil((t["valor_gr"] * peso) / 1000) * 1000
-            return {"exito": True, "precio": precio}
+            return {
+                "exito": True,
+                "precio": precio,
+                "valor_gr": t["valor_gr"],
+                "rango": f"{_fmt_peso(t['peso_min'])} a {_fmt_peso(t['peso_max'])} gr",
+            }
     return {"error": "No se encontró una tarifa para esa calidad y peso."}

@@ -263,11 +263,15 @@ function poblarCalidadesTienda(calidades) {
   calcTiendaDeb();
 }
 
+function fmtPesos(n) { return `$${n.toLocaleString("es-CO").replace(/,/g, ".")}`; }
+
 async function calcularTienda() {
   const peso = $("#tienda-peso").value.trim();
   const calidad = $("#tienda-calidad").value;
+  const criterio = $("#criterio-tienda");
   if (!peso || !calidad) {
     $("#res-tienda").textContent = "Ingrese peso y calidad.";
+    criterio.style.display = "none";
     return;
   }
   const r = await fetch("/api/precio-tienda", {
@@ -275,7 +279,14 @@ async function calcularTienda() {
     body: JSON.stringify({ peso, calidad }),
   });
   const d = await r.json();
-  $("#res-tienda").textContent = d.error ? "⚠️ " + d.error : `$${d.precio.toLocaleString("es-CO").replace(/,/g, ".")}`;
+  if (d.error) {
+    $("#res-tienda").textContent = "⚠️ " + d.error;
+    criterio.style.display = "none";
+    return;
+  }
+  $("#res-tienda").textContent = fmtPesos(d.precio);
+  criterio.style.display = "";
+  criterio.textContent = `Precio por gramo: ${fmtPesos(d.valor_gr)} — ${calidad}, rango ${d.rango}`;
 }
 
 // =====================================================
