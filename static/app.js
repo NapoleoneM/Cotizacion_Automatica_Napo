@@ -9,7 +9,9 @@ const DEBOUNCE = 300;
 function aplicarTema(t) {
   document.documentElement.dataset.tema = t;
   $$("#toggle-tema button").forEach(b => b.classList.toggle("activo", b.dataset.tema === t));
-  $("#logo").src = t === "light" ? "/img/logo_negro.png" : "/img/logo_blanco.png";
+  const src = t === "light" ? "/img/logo_negro.png" : "/img/logo_blanco.png";
+  $("#logo").src = src;
+  const gl = $("#gate-logo"); if (gl) gl.src = src;
   localStorage.setItem("tema", t);
   if (tablaCargada) dibujarTabla(tablaCargada);  // repintar con colores del tema
 }
@@ -380,13 +382,106 @@ $("#titulo-app").addEventListener("dblclick", () => {
 });
 
 // =====================================================
+// ACCESO POR PIN
+// =====================================================
+// Interceptor: cualquier respuesta 401 de un endpoint de datos (p. ej. tras
+// reiniciarse el servidor y caducar la sesión) vuelve a mostrar la pantalla
+// de PIN, sin importar desde qué parte de la app se disparó la petición.
+const _fetch = window.fetch.bind(window);
+window.fetch = async (url, opts) => {
+  const resp = await _fetch(url, opts);
+  const u = String(url);
+  if (resp.status === 401 && !u.includes("/api/acceso") && !u.includes("/api/sesion")) {
+    mostrarGate();
+  }
+  return resp;
+};
+
+const gate = $("#gate");
+let gateTimer = null;
+
+function mostrarGate() {
+  gate.hidden = false;
+  const pin = $("#gate-pin");
+  pin.disabled = false; $("#gate-ok").disabled = false;
+  pin.value = ""; pin.focus();
+}
+function ocultarGate() { clearInterval(gateTimer); gate.hidden = true; }
+
+async function comprobarSesion() {
+  try {
+    const d = await _fetch("/api/sesion").then(r => r.json());
+    if (d.autorizado) { ocultarGate(); iniciarApp(); }
+    else mostrarGate();
+  } catch { mostrarGate(); }
+}
+
+async function enviarPin() {
+  const pin = $("#gate-pin");
+  const msg = $("#gate-msg");
+  if (pin.disabled) return;
+  const valor = pin.value.trim();
+  if (valor.length < 4) { msg.textContent = "Ingrese los 4 dígitos."; return; }
+  $("#gate-ok").disabled = true;
+  try {
+    const r = await _fetch("/api/acceso", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ pin: valor }),
+    });
+    const d = await r.json();
+    if (r.ok && d.ok) { msg.textContent = ""; ocultarGate(); iniciarApp(); return; }
+    pin.value = "";
+    if (d.espera && d.espera > 0) cuentaRegresiva(d.espera, d.error === "bloqueado");
+    else { msg.textContent = "PIN incorrecto. Intente de nuevo."; $("#gate-ok").disabled = false; pin.focus(); }
+  } catch {
+    msg.textContent = "Error de conexión. Reintente.";
+    $("#gate-ok").disabled = false;
+  }
+}
+
+function cuentaRegresiva(seg, bloqueado) {
+  const msg = $("#gate-msg"), pin = $("#gate-pin");
+  $("#gate-ok").disabled = true; pin.disabled = true;
+  clearInterval(gateTimer);
+  let restante = seg;
+  const pintar = () => {
+    msg.textContent = (bloqueado ? "Demasiados intentos. " : "PIN incorrecto. ") + `Espere ${restante}s.`;
+  };
+  pintar();
+  gateTimer = setInterval(() => {
+    if (--restante <= 0) {
+      clearInterval(gateTimer);
+      msg.textContent = ""; pin.disabled = false; $("#gate-ok").disabled = false; pin.focus();
+    } else pintar();
+  }, 1000);
+}
+
+$("#gate-ok").onclick = enviarPin;
+$("#gate-pin").addEventListener("input", () => {
+  const pin = $("#gate-pin");
+  pin.value = pin.value.replace(/\D/g, "");
+  if (pin.value.length === 4) enviarPin();  // auto-enviar al completar 4 dígitos
+});
+$("#gate-pin").addEventListener("keydown", e => { if (e.key === "Enter") enviarPin(); });
+
+// =====================================================
 // INICIO
 // =====================================================
-aplicarTema(localStorage.getItem("tema") || "dark");
-nuevaFilaRetail(); calcularRetail();
-nuevaFilaMay();
-(async () => {
-  const e = await (await fetch("/api/estado-precios")).json();
+let appIniciada = false;
+
+function iniciarApp() {
+  if (!appIniciada) {
+    appIniciada = true;
+    nuevaFilaRetail(); calcularRetail();
+    nuevaFilaMay();
+  }
+  cargarEstadoPrecios();
+}
+
+async function cargarEstadoPrecios() {
+  const r = await fetch("/api/estado-precios");
+  if (!r.ok) return;  // el interceptor ya mostró la pantalla de PIN
+  const e = await r.json();
   if (e.cargado) {
     $("#estado-precios").textContent = `Precios actualizados: ${e.hora}`;
     $("#estado-tienda").textContent = `Precios actualizados: ${e.hora}`;
@@ -398,4 +493,7 @@ nuevaFilaMay();
     $("#estado-precios").textContent = "⚠️ Precios no cargados. Presione 'Actualizar precios'.";
     $("#estado-tienda").textContent = "⚠️ Precios no cargados. Presione 'Actualizar precios'.";
   }
-})();
+}
+
+aplicarTema(localStorage.getItem("tema") || "dark");
+comprobarSesion();

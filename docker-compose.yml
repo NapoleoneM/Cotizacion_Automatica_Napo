@@ -12,6 +12,10 @@ services:
       - ./credentials:/app/credentials:ro
     environment:
       - TZ=America/Bogota
+      # PIN de acceso: se define en un archivo .env junto a este compose (fuera
+      # de git). Si falta, 'docker compose up' falla con este mensaje.
+      - APP_PIN=${APP_PIN:?Cree un archivo .env con APP_PIN=xxxx}
+      - PIN_COOKIE_SECURE=1
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.calculadora.entrypoints=websecure"

@@ -111,3 +111,20 @@ h1 { font-size: 22px; margin: 0; }
 /* Créditos */
 .creditos { text-align: center; color: var(--texto-suave); font-size: 11px; margin-top: 14px; }
 .creditos a { color: var(--oro); text-decoration: none; font-weight: bold; }
+
+/* Pantalla de acceso (PIN) */
+.gate { position: fixed; inset: 0; z-index: 1000; background: var(--fondo);
+  display: flex; align-items: center; justify-content: center; padding: 20px; }
+.gate[hidden] { display: none; }
+.gate-caja { background: var(--card); border-radius: 12px; padding: 28px 24px;
+  width: 100%; max-width: 320px; text-align: center; }
+.gate-logo { width: 54px; height: 66px; object-fit: contain; margin-bottom: 8px; }
+.gate-titulo { margin: 0; font-size: 20px; }
+.gate-sub { margin: 4px 0 18px; font-size: 13px; color: var(--texto-suave); }
+.gate-pin { width: 160px; text-align: center; letter-spacing: 12px; font-size: 26px;
+  padding: 10px 0 10px 12px; border-radius: 8px; border: 1px solid var(--borde);
+  background: var(--campo); color: var(--texto); font-family: var(--fuente); }
+.gate-pin:focus { outline: none; border-color: var(--oro); }
+.gate-btn { max-width: 200px; margin: 16px auto 0; }
+.gate-btn:disabled { opacity: .5; cursor: default; }
+.gate-msg { min-height: 18px; margin: 12px 0 0; font-size: 13px; font-weight: bold; color: var(--rojo); }

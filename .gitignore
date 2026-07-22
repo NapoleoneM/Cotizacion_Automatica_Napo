@@ -1,6 +1,9 @@
 # Credenciales del service account — nunca subir al repositorio
 credentials/
 
+# PIN de acceso y otras variables de entorno — solo en el servidor
+.env
+
 # Entornos virtuales
 .venv/
 venv/

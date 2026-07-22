@@ -8,6 +8,19 @@
   <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
+  <!-- ================= PANTALLA DE ACCESO (PIN) ================= -->
+  <div id="gate" class="gate" hidden>
+    <div class="gate-caja">
+      <img id="gate-logo" class="gate-logo" alt="Napoleone">
+      <h2 class="gate-titulo">Calculadora Napo</h2>
+      <p class="gate-sub">Ingrese su PIN de acceso</p>
+      <input type="password" id="gate-pin" class="gate-pin" inputmode="numeric"
+             maxlength="4" autocomplete="off" placeholder="••••">
+      <button class="btn-accion gate-btn" id="gate-ok">Entrar</button>
+      <p id="gate-msg" class="gate-msg"></p>
+    </div>
+  </div>
+
   <header class="cabecera">
     <img id="logo" class="logo" alt="Napoleone">
     <div class="titulo-bloque">
