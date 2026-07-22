@@ -402,6 +402,8 @@ let gateTimer = null;
 
 function mostrarGate() {
   gate.hidden = false;
+  $("#gate-cargando").hidden = true;
+  $("#gate-form").hidden = false;
   const pin = $("#gate-pin");
   pin.disabled = false; $("#gate-ok").disabled = false;
   pin.value = ""; pin.focus();

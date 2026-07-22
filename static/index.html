@@ -8,16 +8,23 @@
   <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
-  <!-- ================= PANTALLA DE ACCESO (PIN) ================= -->
-  <div id="gate" class="gate" hidden>
+  <!-- ================= PANTALLA DE ACCESO (PIN) =================
+       Visible desde el primer pixel (tapa la app con fondo sólido) para que
+       nunca se vea la calculadora antes de comprobar la sesión. Muestra
+       "Cargando…" hasta que el servidor responde; el formulario de PIN solo
+       aparece si NO hay sesión. -->
+  <div id="gate" class="gate">
     <div class="gate-caja">
       <img id="gate-logo" class="gate-logo" alt="Napoleone">
       <h2 class="gate-titulo">Calculadora Napo</h2>
-      <p class="gate-sub">Ingrese su PIN de acceso</p>
-      <input type="password" id="gate-pin" class="gate-pin" inputmode="numeric"
-             maxlength="4" autocomplete="off" placeholder="••••">
-      <button class="btn-accion gate-btn" id="gate-ok">Entrar</button>
-      <p id="gate-msg" class="gate-msg"></p>
+      <p id="gate-cargando" class="gate-sub">Cargando…</p>
+      <div id="gate-form" hidden>
+        <p class="gate-sub">Ingrese su PIN de acceso</p>
+        <input type="password" id="gate-pin" class="gate-pin" inputmode="numeric"
+               maxlength="4" autocomplete="off" placeholder="••••">
+        <button class="btn-accion gate-btn" id="gate-ok">Entrar</button>
+        <p id="gate-msg" class="gate-msg"></p>
+      </div>
     </div>
   </div>
 
