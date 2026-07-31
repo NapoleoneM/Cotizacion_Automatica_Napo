@@ -10,11 +10,22 @@ services:
       # Credenciales del service account SOLO en el servidor (solo lectura).
       # Coloca credenciales.json en ./credentials/ junto a este archivo.
       - ./credentials:/app/credentials:ro
+      # Estado del día del chat center (presencia y novedades del panel de
+      # turnos). Con el volumen, un reinicio del contenedor no borra lo del día.
+      # El contenedor corre como uid 1000, así que en el servidor:
+      #   mkdir -p datos && chown 1000:1000 datos
+      - ./datos:/app/datos
     environment:
       - TZ=America/Bogota
       # PIN de acceso: se define en un archivo .env junto a este compose (fuera
       # de git). Si falta, 'docker compose up' falla con este mensaje.
       - APP_PIN=${APP_PIN:?Cree un archivo .env con APP_PIN=xxxx}
+      # PIN aparte de la jefa de ventas: suma su vista de gestión. Opcional:
+      # sin él, nadie puede entrar como jefa y esa vista no existe.
+      - APP_PIN_JEFA=${APP_PIN_JEFA:-}
+      # Token del puente que consume la Torre de Control. Opcional: sin él, el
+      # endpoint /api/torre/historial responde 503.
+      - TORRE_TOKEN=${TORRE_TOKEN:-}
       - PIN_COOKIE_SECURE=1
     labels:
       - "traefik.enable=true"

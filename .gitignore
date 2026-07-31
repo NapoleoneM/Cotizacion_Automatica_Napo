@@ -4,6 +4,9 @@ credentials/
 # PIN de acceso y otras variables de entorno — solo en el servidor
 .env
 
+# Estado del día del panel de turnos (presencia y novedades) — solo servidor
+datos/
+
 # Entornos virtuales
 .venv/
 venv/

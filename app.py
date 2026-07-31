@@ -18,7 +18,7 @@ import logging
 from datetime import datetime
 
 from fastapi import FastAPI, Request
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -26,6 +26,10 @@ from core.cotizacion_logic import calcular_cotizacion
 from core.mayorista_logic import obtener_precios_sheets, calcular_cotizacion_mayorista
 from core.tabla_precios import obtener_tabla_precios
 from core.tienda_logic import obtener_tarifas_gramo, calcular_precio_tienda
+from core.turnos import (
+    obtener_horario, calcular_cobertura, personas_del_horario, horario_desde_equipo,
+)
+from core import almacen
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger("calculadora_napo")
@@ -62,6 +66,9 @@ def _error_publico(res, contexto):
 # envía una vez y el servidor devuelve una cookie de sesión que exigen todos
 # los endpoints de datos. Sin cookie válida → 401.
 PIN = os.environ.get("APP_PIN", "").strip()
+# PIN aparte para la jefa de ventas: da el mismo acceso más su vista de gestión.
+# Si no se configura, nadie puede entrar como jefa (la vista queda deshabilitada).
+PIN_JEFA = os.environ.get("APP_PIN_JEFA", "").strip()
 COOKIE_SECURE = os.environ.get("PIN_COOKIE_SECURE", "1") != "0"  # 0 solo para dev local en http
 NOMBRE_COOKIE = "sesion"
 _TTL_SESION = 7 * 24 * 3600      # la sesión dura 7 días
@@ -70,11 +77,13 @@ _ESPERA_BASE = 5                 # seg del primer bloqueo
 _ESPERA_TOPE = 300               # tope del bloqueo (5 min)
 
 # Rutas de la API que NO exigen sesión (todo lo demás bajo /api/ sí).
-_API_PUBLICA = {"/api/acceso", "/api/sesion"}
+# El puente de la Torre no usa cookie: se autentica con su propio token, así que
+# se excluye aquí y valida por su cuenta.
+_API_PUBLICA = {"/api/acceso", "/api/sesion", "/api/torre/historial"}
 
 # Estado en memoria (single container). Un reinicio limpia sesiones y bloqueos:
 # aceptable — a lo sumo hay que reingresar el PIN.
-_sesiones = {}   # token -> expiración (time.monotonic)
+_sesiones = {}   # token -> {"exp": time.monotonic, "rol": "asesor"|"jefa"}
 _intentos = {}   # ip -> {"fails": int, "hasta": time.monotonic hasta el que está bloqueado}
 
 
@@ -88,23 +97,33 @@ def _ip_cliente(request):
     return request.client.host if request.client else "desconocido"
 
 
-def _nueva_sesion():
+def _nueva_sesion(rol="asesor"):
     token = secrets.token_urlsafe(32)
-    _sesiones[token] = time.monotonic() + _TTL_SESION
+    _sesiones[token] = {"exp": time.monotonic() + _TTL_SESION, "rol": rol}
     return token
 
 
-def _sesion_valida(request):
+def _sesion(request):
+    """Devuelve la sesión ({'exp','rol'}) o None si no hay o ya expiró."""
     token = request.cookies.get(NOMBRE_COOKIE)
     if not token:
-        return False
-    exp = _sesiones.get(token)
-    if exp is None:
-        return False
-    if time.monotonic() > exp:
+        return None
+    ses = _sesiones.get(token)
+    if ses is None:
+        return None
+    if time.monotonic() > ses["exp"]:
         _sesiones.pop(token, None)
-        return False
-    return True
+        return None
+    return ses
+
+
+def _sesion_valida(request):
+    return _sesion(request) is not None
+
+
+def _es_jefa(request):
+    ses = _sesion(request)
+    return bool(ses and ses.get("rol") == "jefa")
 
 
 @app.middleware("http")
@@ -125,8 +144,10 @@ class AccesoReq(BaseModel):
 
 @app.get("/api/sesion")
 def api_sesion(request: Request):
-    """El frontend lo consulta al cargar para decidir si pide el PIN."""
-    return {"autorizado": _sesion_valida(request)}
+    """El frontend lo consulta al cargar para decidir si pide el PIN y si debe
+    mostrar la vista de gestión (solo con el PIN de la jefa)."""
+    ses = _sesion(request)
+    return {"autorizado": ses is not None, "rol": (ses or {}).get("rol", "")}
 
 
 @app.post("/api/acceso")
@@ -149,15 +170,23 @@ def api_acceso(req: AccesoReq, request: Request):
         return JSONResponse({"error": "Acceso no configurado en el servidor."}, status_code=503)
 
     # Comparación en tiempo constante (evita filtrar el PIN por tiempos).
-    if hmac.compare_digest(req.pin.strip(), PIN):
+    # Se prueba primero el de la jefa: si acierta, la sesión lleva su rol.
+    enviado = req.pin.strip()
+    rol = ""
+    if PIN_JEFA and hmac.compare_digest(enviado, PIN_JEFA):
+        rol = "jefa"
+    elif hmac.compare_digest(enviado, PIN):
+        rol = "asesor"
+
+    if rol:
         _intentos.pop(ip, None)
-        token = _nueva_sesion()
-        resp = JSONResponse({"ok": True})
+        token = _nueva_sesion(rol)
+        resp = JSONResponse({"ok": True, "rol": rol})
         resp.set_cookie(
             NOMBRE_COOKIE, token, max_age=_TTL_SESION,
             httponly=True, samesite="lax", secure=COOKIE_SECURE,
         )
-        log.info("Acceso concedido a %s", ip)
+        log.info("Acceso concedido a %s (rol %s)", ip, rol)
         return resp
 
     # Fallo: contar y, pasada la gracia, imponer espera creciente.
@@ -414,6 +443,366 @@ def _componer_bloques(tabla):
         b["y0"] = y_inf
         b["x0"] = MARGEN if prev is None else prev["x0"] + prev["w"] + GAP_BLOQUE
     return [cliente, dolar, joyer, mayor, neoros]
+
+
+# =======================================================
+# TURNOS Y COBERTURA (panel del chat center)
+# =======================================================
+# El horario cambia una vez por semana: con 2 minutos de caché el panel se
+# siente en vivo y no se castiga la cuota de la API de Sheets.
+_TTL_HORARIO = 120
+_horario_cache = {"datos": None, "ts": 0.0, "error": ""}
+
+
+def _horario_actual(forzar=False):
+    """Horario del día. Dos fuentes posibles, en este orden:
+
+    1. La hoja 'Horarios' de Sheets (la más rica: trae compensatorios y cambios
+       por color). Se cachea 2 minutos.
+    2. El equipo registrado en la app, si la hoja no existe o no se pudo leer.
+
+    Devuelve (horario, aviso). Si no hay ninguna de las dos, (None, aviso).
+    """
+    ahora = time.monotonic()
+    if not forzar and _horario_cache["datos"] and ahora - _horario_cache["ts"] < _TTL_HORARIO:
+        return _horario_cache["datos"], ""
+
+    res = obtener_horario(ruta_credenciales())
+    if "error" not in res:
+        res["fuente"] = "hoja"
+        _horario_cache.update(datos=res, ts=ahora, error="")
+        return res, ""
+
+    log.info("Horario: la hoja no está disponible (%s); se usa el equipo de la app",
+             res["error"])
+    personas = almacen.equipo()
+    if personas:
+        h = horario_desde_equipo(personas)
+        _horario_cache.update(datos=h, ts=ahora, error="")
+        return h, ""
+    if _horario_cache["datos"]:
+        return _horario_cache["datos"], ""
+    return None, ("Aún no hay equipo registrado. La jefa de ventas puede agregarlo "
+                  "desde el panel, o crear la hoja 'Horarios'.")
+
+
+class PresenciaReq(BaseModel):
+    nombre: str = Field("", max_length=40)
+
+
+class EstadoReq(BaseModel):
+    nombre: str = Field("", max_length=40)
+    estado: str = Field("disponible", max_length=20)
+
+
+class NovedadReq(BaseModel):
+    nombre: str = Field("", max_length=40)
+    tipo: str = Field("Ausencia", max_length=30)
+    nota: str = Field("", max_length=200)
+    reportado_por: str = Field("", max_length=40)
+    desde: str = Field("", max_length=5)
+    hasta: str = Field("", max_length=5)
+
+
+class CoberturaReq(BaseModel):
+    titular: str = Field("", max_length=40)
+    soporte: str = Field("", max_length=40)
+
+
+@app.get("/api/turnos/estado")
+def api_turnos_estado():
+    """Lo que ve el panel: a quién debe cubrir soporte ahora, quién tiene una
+    ausencia ya explicada, quién está en línea y las novedades del día."""
+    horario, err = _horario_actual()
+    novedades = almacen.novedades_del_dia()
+    base = {
+        "estados_posibles": [{"clave": k, "etiqueta": v["etiqueta"], "atiende": v["atiende"]}
+                             for k, v in almacen.ESTADOS_ASESOR.items()],
+        "tipos_novedad": almacen.TIPOS_NOVEDAD,
+        "tipos_ajuste": [{"clave": k, "etiqueta": v["etiqueta"], "pide": v["pide"]}
+                         for k, v in almacen.TIPOS_AJUSTE.items()],
+    }
+    if horario is None:
+        # Sin horario todavía se pueden ver y registrar novedades.
+        return {**base, "configurado": False, "aviso": err,
+                "novedades": novedades, "personas": [], "ajustes": [],
+                "requieren_cobertura": [], "ausencia_informada": [], "en_linea": [],
+                "por_entrar": [], "no_se_espera": [],
+                "hora": datetime.now().strftime("%I:%M %p")}
+    datos = calcular_cobertura(
+        horario, datetime.now(),
+        presencia=almacen.presencia_del_dia(),
+        estados=almacen.estados_actuales(),
+        novedades=novedades,
+        coberturas=almacen.coberturas_activas(),
+        ajustes=almacen.ajustes_del_dia(),
+    )
+    datos.update(base, configurado=True, personas=personas_del_horario(horario),
+                 fuente=horario.get("fuente", ""))
+    return datos
+
+
+@app.post("/api/turnos/presencia")
+def api_turnos_presencia(req: PresenciaReq):
+    """Señal de que el asesor está activo (la envía la calculadora sola)."""
+    nombre = _limpiar_nombre(req.nombre)
+    if not nombre:
+        return {"error": "Falta el nombre."}
+    almacen.marcar_visto(nombre)
+    return {"ok": True}
+
+
+@app.post("/api/turnos/estado-asesor")
+def api_turnos_estado_asesor(req: EstadoReq):
+    """El asesor marca en qué está (disponible, almuerzo, capacitación…). Así
+    soporte distingue una ausencia explicada de un silencio inexplicado."""
+    nombre = _limpiar_nombre(req.nombre)
+    if not nombre:
+        return {"error": "Falta el nombre."}
+    est = almacen.marcar_estado(nombre, req.estado)
+    if not est:
+        return {"error": "Estado no válido."}
+    return {"ok": True, "estado": est}
+
+
+@app.post("/api/turnos/novedad")
+def api_turnos_novedad(req: NovedadReq):
+    nombre = _limpiar_nombre(req.nombre)
+    if not nombre:
+        return {"error": "Falta el nombre."}
+    nov = almacen.reportar_novedad(nombre, req.tipo, req.nota,
+                                   _limpiar_nombre(req.reportado_por),
+                                   req.desde, req.hasta)
+    log.info("Novedad: %s / %s", nov["nombre"], nov["tipo"])
+    return {"ok": True, "novedad": nov}
+
+
+@app.post("/api/turnos/novedad/quitar")
+def api_turnos_novedad_quitar(req: NovedadReq):
+    nombre = _limpiar_nombre(req.nombre)
+    if not nombre:
+        return {"error": "Falta el nombre."}
+    quitadas = almacen.quitar_novedad(nombre, req.tipo or None)
+    almacen.cerrar_cobertura(nombre)
+    return {"ok": True, "quitadas": quitadas}
+
+
+class AjusteReq(BaseModel):
+    nombre: str = Field("", max_length=40)
+    tipo: str = Field("turno", max_length=20)
+    turno: int | None = Field(None, ge=1, le=3)
+    hora: str = Field("", max_length=5)
+    nota: str = Field("", max_length=200)
+    autor: str = Field("", max_length=40)
+
+
+@app.post("/api/turnos/ajuste")
+def api_turnos_ajuste(req: AjusteReq):
+    """Movimiento de horario para HOY (no toca el plan de la semana): cambio de
+    turno, entrada más tarde, no viene, o entra alguien no programado."""
+    nombre = _limpiar_nombre(req.nombre)
+    if not nombre:
+        return {"error": "Falta el nombre."}
+    aj = almacen.registrar_ajuste(nombre, req.tipo, req.turno, req.hora,
+                                  req.nota, _limpiar_nombre(req.autor))
+    if not aj:
+        return {"error": "Ajuste no válido."}
+    log.info("Ajuste del día: %s → %s", aj["nombre"], aj["etiqueta"])
+    return {"ok": True, "ajuste": aj}
+
+
+@app.post("/api/turnos/ajuste/quitar")
+def api_turnos_ajuste_quitar(req: AjusteReq):
+    nombre = _limpiar_nombre(req.nombre)
+    if not nombre:
+        return {"error": "Falta el nombre."}
+    return {"ok": True, "quitados": almacen.quitar_ajuste(nombre, req.tipo or None)}
+
+
+@app.post("/api/turnos/cubrir")
+def api_turnos_cubrir(req: CoberturaReq):
+    """Soporte declara que está cubriendo a alguien: evita que dos personas
+    entren a la misma cuenta y deja el registro de quién cubrió qué."""
+    titular = _limpiar_nombre(req.titular)
+    soporte = _limpiar_nombre(req.soporte)
+    if not titular or not soporte:
+        return {"error": "Falta el titular o quién cubre."}
+    almacen.abrir_cobertura(titular, soporte)
+    return {"ok": True}
+
+
+@app.post("/api/turnos/cubrir/cerrar")
+def api_turnos_cubrir_cerrar(req: CoberturaReq):
+    titular = _limpiar_nombre(req.titular)
+    if not titular:
+        return {"error": "Falta el titular."}
+    return {"ok": True, "cerradas": almacen.cerrar_cobertura(titular)}
+
+
+# =======================================================
+# GESTIÓN (solo con el PIN de la jefa de ventas)
+# =======================================================
+_FECHA_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
+
+def _solo_jefa(request):
+    """None si puede pasar; si no, la respuesta 403 a devolver."""
+    if _es_jefa(request):
+        return None
+    return JSONResponse({"error": "Solo la jefa de ventas puede ver esto."}, status_code=403)
+
+
+class PersonaReq(BaseModel):
+    nombre: str = Field("", max_length=40)
+    rol: str = Field("Red social", max_length=30)
+    turno: int = Field(1, ge=1, le=3)
+    activa: bool = True
+
+
+@app.get("/api/equipo")
+def api_equipo():
+    """Lista del equipo. La ve cualquiera con sesión (el panel necesita los
+    nombres para el selector); solo la jefa puede modificarla."""
+    return {"personas": almacen.equipo(), "roles": almacen.ROLES,
+            "puede_editar": False}
+
+
+@app.get("/api/equipo/gestion")
+def api_equipo_gestion(request: Request):
+    """Igual que /api/equipo pero incluye las inactivas: es la vista de edición."""
+    negado = _solo_jefa(request)
+    if negado:
+        return negado
+    return {"personas": almacen.equipo(solo_activas=False), "roles": almacen.ROLES,
+            "puede_editar": True}
+
+
+@app.post("/api/equipo/guardar")
+def api_equipo_guardar(req: PersonaReq, request: Request):
+    negado = _solo_jefa(request)
+    if negado:
+        return negado
+    nombre = _limpiar_nombre(req.nombre)
+    if not nombre:
+        return {"error": "Falta el nombre."}
+    p = almacen.guardar_persona(nombre, req.rol, req.turno, req.activa)
+    _horario_cache.update(datos=None, ts=0.0)      # el horario cambió
+    log.info("Equipo: guardado %s (%s, turno %s)", p["nombre"], p["rol"], p["turno"])
+    return {"ok": True, "persona": p}
+
+
+@app.post("/api/equipo/quitar")
+def api_equipo_quitar(req: PersonaReq, request: Request):
+    negado = _solo_jefa(request)
+    if negado:
+        return negado
+    nombre = _limpiar_nombre(req.nombre)
+    if not nombre:
+        return {"error": "Falta el nombre."}
+    n = almacen.quitar_persona(nombre)
+    _horario_cache.update(datos=None, ts=0.0)
+    return {"ok": True, "quitadas": n}
+
+
+@app.get("/api/gestion/resumen")
+def api_gestion_resumen(request: Request, desde: str = "", hasta: str = ""):
+    """Resumen por persona de un rango (por defecto, la semana en curso):
+    días con señal, hora de entrada típica, novedades y minutos cubierto."""
+    negado = _solo_jefa(request)
+    if negado:
+        return negado
+    if not (_FECHA_RE.match(desde or "") and _FECHA_RE.match(hasta or "")):
+        desde, hasta = almacen.rango_semana()
+    return almacen.resumen(desde, hasta)
+
+
+@app.get("/api/gestion/dia")
+def api_gestion_dia(request: Request, fecha: str = ""):
+    """Foto de un día: novedades y coberturas (para revisar ayer, por ejemplo)."""
+    negado = _solo_jefa(request)
+    if negado:
+        return negado
+    f = fecha if _FECHA_RE.match(fecha or "") else almacen.hoy()
+    return {
+        "fecha": f,
+        "novedades": almacen.novedades_del_dia(f, solo_activas=False),
+        "coberturas": list(almacen.coberturas_activas(f).values()),
+        "presencia": almacen.presencia_del_dia(f),
+        "estados": almacen.estados_actuales(f),
+    }
+
+
+# =======================================================
+# SELLO DE FECHA Y HORA (para pantallazos de reporte)
+# =======================================================
+# Se dibuja en el SERVIDOR y se entrega como imagen. Así el asesor puede tomar
+# un pantallazo y la fecha/hora no se puede cambiar editando el HTML con las
+# herramientas del navegador (que es lo que pasaría con un texto normal).
+# Nota honesta: la prueba fuerte es el registro en la base de datos, que también
+# lleva la hora del servidor; la imagen es para que el pantallazo sea creíble.
+_DIAS_ES = ["lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo"]
+_MESES_ES = ["ene", "feb", "mar", "abr", "may", "jun",
+             "jul", "ago", "sep", "oct", "nov", "dic"]
+
+
+@app.get("/api/reloj.png")
+def api_reloj(t: str = "dark"):
+    """PNG con la fecha y hora del servidor. Sin caché: cada carga es real."""
+    from io import BytesIO
+    from PIL import Image, ImageDraw, ImageFont
+
+    ahora = datetime.now()
+    texto = (f"{_DIAS_ES[ahora.weekday()]} {ahora.day} {_MESES_ES[ahora.month - 1]} "
+             f"{ahora.year} · {ahora.strftime('%I:%M %p').lower()}")
+
+    oscuro = t != "light"
+    fondo = (35, 35, 35) if oscuro else (255, 255, 255)
+    tinta = (230, 230, 230) if oscuro else (26, 26, 26)
+    borde = (201, 162, 39)          # dorado de la marca
+
+    try:
+        fuente = ImageFont.load_default(size=15)
+    except TypeError:               # Pillow antiguo: sin tamaño ajustable
+        fuente = ImageFont.load_default()
+
+    tmp = ImageDraw.Draw(Image.new("RGB", (1, 1)))
+    caja = tmp.textbbox((0, 0), texto, font=fuente)
+    ancho, alto = caja[2] - caja[0] + 20, caja[3] - caja[1] + 14
+
+    img = Image.new("RGB", (ancho, alto), fondo)
+    d = ImageDraw.Draw(img)
+    d.rectangle([0, 0, ancho - 1, alto - 1], outline=borde)
+    d.text((10 - caja[0], 7 - caja[1]), texto, font=fuente, fill=tinta)
+
+    buf = BytesIO()
+    img.save(buf, format="PNG")
+    return Response(
+        content=buf.getvalue(), media_type="image/png",
+        headers={"Cache-Control": "no-store, max-age=0"},
+    )
+
+
+# =======================================================
+# PUENTE PARA LA TORRE DE CONTROL
+# =======================================================
+# La Torre de Control (proyecto Django aparte) hace el análisis profundo. Para
+# no tener dos verdades, lee de aquí lo que la calculadora captura. Se autentica
+# con un token propio (cabecera X-Token), no con la cookie del navegador.
+TOKEN_TORRE = os.environ.get("TORRE_TOKEN", "").strip()
+
+
+@app.get("/api/torre/historial")
+def api_torre_historial(request: Request, desde: str = "", hasta: str = ""):
+    """Volcado crudo de presencia, estados, novedades y coberturas por rango."""
+    token = (request.headers.get("x-token") or "").strip()
+    if not TOKEN_TORRE:
+        return JSONResponse({"error": "Puente no configurado."}, status_code=503)
+    if not token or not hmac.compare_digest(token, TOKEN_TORRE):
+        log.warning("Intento de acceso al puente con token inválido desde %s", _ip_cliente(request))
+        return JSONResponse({"error": "No autorizado."}, status_code=401)
+    if not (_FECHA_RE.match(desde or "") and _FECHA_RE.match(hasta or "")):
+        desde, hasta = almacen.rango_semana()
+    return almacen.historial(desde, hasta)
 
 
 # =======================================================

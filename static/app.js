@@ -14,6 +14,7 @@ function aplicarTema(t) {
   const gl = $("#gate-logo"); if (gl) gl.src = src;
   localStorage.setItem("tema", t);
   if (tablaCargada) dibujarTabla(tablaCargada);  // repintar con colores del tema
+  if (typeof refrescarSello === "function") refrescarSello();
 }
 $("#toggle-tema").addEventListener("click", e => {
   if (e.target.dataset.tema) aplicarTema(e.target.dataset.tema);
@@ -413,7 +414,7 @@ function ocultarGate() { clearInterval(gateTimer); gate.hidden = true; }
 async function comprobarSesion() {
   try {
     const d = await _fetch("/api/sesion").then(r => r.json());
-    if (d.autorizado) { ocultarGate(); iniciarApp(); }
+    if (d.autorizado) { ocultarGate(); iniciarApp(); aplicarRol(d.rol || ""); }
     else mostrarGate();
   } catch { mostrarGate(); }
 }
@@ -431,7 +432,7 @@ async function enviarPin() {
       body: JSON.stringify({ pin: valor }),
     });
     const d = await r.json();
-    if (r.ok && d.ok) { msg.textContent = ""; ocultarGate(); iniciarApp(); return; }
+    if (r.ok && d.ok) { msg.textContent = ""; ocultarGate(); iniciarApp(); aplicarRol(d.rol || ""); return; }
     pin.value = "";
     if (d.espera && d.espera > 0) cuentaRegresiva(d.espera, d.error === "bloqueado");
     else { msg.textContent = "PIN incorrecto. Intente de nuevo."; $("#gate-ok").disabled = false; pin.focus(); }
@@ -467,6 +468,554 @@ $("#gate-pin").addEventListener("input", () => {
 $("#gate-pin").addEventListener("keydown", e => { if (e.key === "Enter") enviarPin(); });
 
 // =====================================================
+// PANEL DE TURNOS Y COBERTURA
+// Vive fuera de la calculadora. Envía una señal de presencia (para que soporte
+// sepa quién está atendiendo) y muestra a quién hay que cubrir según la hora.
+// =====================================================
+const YO_KEY = "turnos_yo";
+const REFRESCO_PANEL_MS = 45000;   // cada cuánto se relee el estado
+const LATIDO_MS = 180000;          // cada cuánto se envía la señal de presencia
+let panelTimer = null, latidoTimer = null;
+
+function yoNombre() { return localStorage.getItem(YO_KEY) || ""; }
+
+function el(tag, cls, txt) {
+  const n = document.createElement(tag);
+  if (cls) n.className = cls;
+  if (txt !== undefined) n.textContent = txt;
+  return n;
+}
+
+function pintarLista(cont, items, hacerItem) {
+  cont.innerHTML = "";
+  if (!items || !items.length) {
+    cont.append(el("div", "panel-vacio", "— nadie —"));
+    return;
+  }
+  items.forEach(x => cont.append(hacerItem(x)));
+}
+
+function itemBase(x, color) {
+  const d = el("div", "panel-item " + color);
+  d.append(el("span", "nom", x.nombre));
+  if (x.turno) d.append(el("span", "tag", "T" + x.turno));
+  if (x.etiqueta) d.append(el("span", "tag", x.etiqueta));
+  // Marca de ajuste: explica por qué el panel dice algo distinto al cuadro
+  if (x.ajuste) d.append(el("span", "tag azul", "✎ " + x.ajuste));
+  return d;
+}
+
+// Muestra el campo que pide cada tipo de ajuste (turno, hora, o ninguno)
+function pintarCamposAjuste() {
+  const o = $("#aj-tipo").selectedOptions[0];
+  const pide = o ? (o.dataset.pide || "") : "";
+  $("#aj-turno").hidden = pide !== "turno";
+  $("#aj-hora").hidden = pide !== "hora";
+}
+
+// Botón para que soporte se adjudique la cobertura (o la libere). Evita que dos
+// personas entren a la misma cuenta y deja el registro de quién cubrió.
+function botonCubrir(x) {
+  const cont = el("div", "panel-cubrir");
+  if (x.cubierto_por) {
+    cont.append(el("span", "cubre-txt", `cubre ${x.cubierto_por} desde ${x.cubierto_desde || ""}`));
+    const b = el("button", "panel-mini", "liberar");
+    b.onclick = async () => {
+      await fetch("/api/turnos/cubrir/cerrar", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ titular: x.nombre }),
+      });
+      cargarTurnos();
+    };
+    cont.append(b);
+  } else {
+    const b = el("button", "panel-mini oro", "Yo lo cubro");
+    b.onclick = async () => {
+      const yo = yoNombre();
+      if (!yo) { alert("Primero elige tu nombre en 'Soy:'"); return; }
+      await fetch("/api/turnos/cubrir", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ titular: x.nombre, soporte: yo }),
+      });
+      cargarTurnos();
+    };
+    cont.append(b);
+  }
+  return cont;
+}
+
+function renderPanel(d) {
+  refrescarSello();
+  revisarAvisos(d);
+  $("#panel-semana").textContent =
+    d.semana || (d.fuente === "equipo" ? "Turnos según el equipo configurado" : "");
+
+  if (!d.configurado) {
+    const av = $("#panel-aviso");
+    av.hidden = false;
+    av.textContent = "⚠️ " + (d.aviso || "Horario de turnos no configurado todavía.");
+  } else {
+    $("#panel-aviso").hidden = true;
+  }
+
+  const cob = d.requieren_cobertura || [];
+  const aus = d.ausencia_informada || [];
+  $("#n-cob").textContent = cob.length ? `(${cob.length})` : "";
+  $("#n-aus").textContent = aus.length ? `(${aus.length})` : "";
+  $("#n-linea").textContent = (d.en_linea || []).length ? `(${d.en_linea.length})` : "";
+
+  // Lengüeta: el contador cuenta solo lo verdaderamente sin explicación
+  const badge = $("#panel-badge");
+  badge.hidden = cob.length === 0;
+  badge.textContent = cob.length;
+  $("#panel-turnos").classList.toggle("alerta", cob.length > 0);
+
+  // Estados posibles en el selector "Estoy:"
+  const selEst = $("#mi-estado");
+  if ((d.estados_posibles || []).length && selEst.options.length === 0) {
+    d.estados_posibles.forEach(e => selEst.add(new Option(e.etiqueta, e.clave)));
+  }
+  $("#fila-mi-estado").hidden = !yoNombre();
+
+  pintarLista($("#lista-cobertura"), cob, x => {
+    const d2 = itemBase(x, "rojo");
+    d2.append(el("span", "det", `su turno empezó ${x.desde} · ${x.motivo}`));
+    d2.append(botonCubrir(x));
+    return d2;
+  });
+
+  pintarLista($("#lista-ausencia"), aus, x => {
+    // El traslado a la zona presencial se resalta: la persona está trabajando,
+    // pero sus chats quedaron sin atender por prioridad de cliente presencial.
+    const enPresencial = x.estado === "presencial" || x.novedad === "Apoyo a presencial";
+    const d2 = itemBase(x, enPresencial ? "morado" : "amarillo");
+    let det = x.estado_etq ? `${x.estado_etq} desde ${x.desde_estado || ""}` : "";
+    if (x.novedad) det = `${x.novedad}${x.nota ? " · " + x.nota : ""}`;
+    if (enPresencial) det = "🏬 " + det + " · sus chats quedan libres";
+    d2.append(el("span", "det", det));
+    d2.append(botonCubrir(x));
+    return d2;
+  });
+
+  // Ajustes de hoy: lo que rige por encima del plan de la semana
+  const ajs = d.ajustes || [];
+  $("#n-ajustes").textContent = ajs.length ? `(${ajs.length})` : "";
+  pintarLista($("#lista-ajustes"), ajs, x => {
+    const it = el("div", "panel-item azul");
+    const quitar = el("button", "panel-quitar", "✕");
+    quitar.title = "Deshacer el ajuste";
+    quitar.onclick = async () => {
+      await fetch("/api/turnos/ajuste/quitar", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ nombre: x.nombre, tipo: x.tipo }),
+      });
+      cargarTurnos();
+    };
+    it.append(quitar);
+    it.append(el("span", "nom", x.nombre));
+    it.append(el("span", "tag", x.etiqueta));
+    const partes = [];
+    if (x.turno) partes.push("turno " + x.turno);
+    if (x.hora) partes.push("entra " + x.hora);
+    if (x.nota) partes.push(x.nota);
+    if (x.autor) partes.push("por " + x.autor);
+    it.append(el("span", "det", partes.join(" · ")));
+    return it;
+  });
+
+  // Tipos de ajuste en el formulario
+  const selTipo = $("#aj-tipo");
+  if ((d.tipos_ajuste || []).length && selTipo.options.length === 0) {
+    d.tipos_ajuste.forEach(t => {
+      const o = new Option(t.etiqueta, t.clave);
+      o.dataset.pide = t.pide || "";
+      selTipo.add(o);
+    });
+    pintarCamposAjuste();
+  }
+
+  pintarLista($("#lista-novedades"), d.novedades, x => {
+    const d2 = el("div", "panel-item amarillo");
+    const quitar = el("button", "panel-quitar", "✕");
+    quitar.title = "Quitar novedad";
+    quitar.onclick = () => quitarNovedad(x.nombre, x.tipo);
+    d2.append(quitar);
+    d2.append(el("span", "nom", x.nombre));
+    d2.append(el("span", "tag", x.tipo));
+    let det = x.hora || "";
+    if (x.nota) det += " · " + x.nota;
+    if (x.reportado_por) det += " · reportó " + x.reportado_por;
+    d2.append(el("span", "det", det));
+    return d2;
+  });
+
+  pintarLista($("#lista-linea"), d.en_linea, x => {
+    const d2 = itemBase(x, "verde");
+    const m = x.min_sin_senal;
+    d2.append(el("span", "det", m === null || m === undefined
+      ? "activa" : (m <= 1 ? "activa ahora" : `activa hace ${m} min`)));
+    return d2;
+  });
+
+  pintarLista($("#lista-porentrar"), d.por_entrar, x => {
+    const d2 = itemBase(x, "");
+    d2.append(el("span", "det", `entra ${x.desde}`));
+    return d2;
+  });
+
+  pintarLista($("#lista-nospera"), d.no_se_espera, x => itemBase(x, ""));
+
+  // Selectores de personas (conservando lo ya elegido)
+  const personas = d.personas || [];
+  [["#panel-yo-sel", yoNombre(), "— elige tu nombre —"],
+   ["#nov-nombre", $("#nov-nombre").value || yoNombre(), "— ¿de quién? —"],
+   ["#aj-nombre", $("#aj-nombre").value, "— ¿a quién? —"]
+  ].forEach(([sel, valor, ph]) => {
+    const s = $(sel);
+    if (s.dataset.n === String(personas.length) && s.options.length > 1) {
+      s.value = valor || "";
+      return;
+    }
+    s.innerHTML = "";
+    s.add(new Option(ph, ""));
+    personas.forEach(p => s.add(new Option(p, p)));
+    s.value = valor || "";
+    s.dataset.n = String(personas.length);
+  });
+}
+
+async function cargarTurnos() {
+  try {
+    const r = await fetch("/api/turnos/estado");
+    if (!r.ok) return;
+    renderPanel(await r.json());
+  } catch (e) { /* sin conexión: se reintenta en el próximo ciclo */ }
+}
+
+async function enviarPresencia() {
+  const nombre = yoNombre();
+  if (!nombre) return;
+  try {
+    await fetch("/api/turnos/presencia", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ nombre }),
+    });
+  } catch (e) { /* se reintenta con el próximo latido */ }
+}
+
+async function quitarNovedad(nombre, tipo) {
+  await fetch("/api/turnos/novedad/quitar", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ nombre, tipo }),
+  });
+  cargarTurnos();
+}
+
+// =====================================================
+// AVISO SONORO
+// El problema original era que soporte no se daba cuenta. Un contador rojo no
+// sirve si nadie mira la pantalla, así que suena cuando aparece algo nuevo que
+// exige acción: una novedad importante o alguien que se queda sin cubrir.
+// =====================================================
+const MUDO_KEY = "turnos_mudo";
+let novVistas = null;          // ids de novedades ya avisadas
+let cobVistas = null;          // nombres ya avisados como sin cubrir
+let tituloOriginal = document.title;
+let parpadeo = null;
+
+function estaMudo() { return localStorage.getItem(MUDO_KEY) === "1"; }
+
+function sonar(doble) {
+  if (estaMudo()) return;
+  try {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return;
+    const ctx = new AC();
+    const tonos = doble ? [880, 1175] : [880];   // dos notas si es importante
+    tonos.forEach((hz, i) => {
+      const t0 = ctx.currentTime + i * 0.18;
+      const osc = ctx.createOscillator(), vol = ctx.createGain();
+      osc.type = "sine"; osc.frequency.value = hz;
+      vol.gain.setValueAtTime(0.0001, t0);
+      vol.gain.exponentialRampToValueAtTime(0.25, t0 + 0.02);
+      vol.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.16);
+      osc.connect(vol); vol.connect(ctx.destination);
+      osc.start(t0); osc.stop(t0 + 0.18);
+    });
+    setTimeout(() => ctx.close(), 900);
+  } catch (e) { /* si el navegador lo bloquea, queda el aviso visual */ }
+}
+
+// Con la pestaña en segundo plano el pitido puede pasar desapercibido: el
+// título parpadea hasta que el usuario vuelve.
+function avisarEnTitulo(texto) {
+  clearInterval(parpadeo);
+  let on = false;
+  parpadeo = setInterval(() => {
+    document.title = on ? tituloOriginal : texto;
+    on = !on;
+  }, 1000);
+  const parar = () => {
+    if (document.hidden) return;
+    clearInterval(parpadeo); parpadeo = null;
+    document.title = tituloOriginal;
+    document.removeEventListener("visibilitychange", parar);
+  };
+  document.addEventListener("visibilitychange", parar);
+  if (!document.hidden) setTimeout(parar, 8000);
+}
+
+function revisarAvisos(d) {
+  const novs = d.novedades || [];
+  const cob = d.requieren_cobertura || [];
+  const idsNov = new Set(novs.map(n => n.id));
+  const nomCob = new Set(cob.map(x => x.nombre));
+
+  // Primera carga: solo se toma nota, sin sonar (evita el pitido al abrir).
+  if (novVistas === null) { novVistas = idsNov; cobVistas = nomCob; return; }
+
+  const nuevasNov = novs.filter(n => !novVistas.has(n.id));
+  const nuevasCob = cob.filter(x => !cobVistas.has(x.nombre));
+  const importante = nuevasNov.some(n => n.importante);
+
+  if (importante || nuevasCob.length) {
+    sonar(true);
+    const quien = importante ? nuevasNov.find(n => n.importante).nombre
+                             : nuevasCob[0].nombre;
+    avisarEnTitulo(`⚠️ ${quien} — revisar turnos`);
+  } else if (nuevasNov.length) {
+    sonar(false);
+  }
+  novVistas = idsNov;
+  cobVistas = nomCob;
+}
+
+// --- Sello de fecha y hora del servidor (imagen, no texto editable) ---
+function refrescarSello() {
+  const img = $("#panel-sello");
+  if (!img) return;
+  const tema = document.documentElement.dataset.tema === "light" ? "light" : "dark";
+  img.src = `/api/reloj.png?t=${tema}&_=${Date.now()}`;   // _ evita la caché
+}
+
+// --- Equipo: la jefa registra a su gente (sin depender de la hoja de Sheets) ---
+async function cargarEquipo() {
+  if (!esJefa) return;
+  try {
+    const r = await fetch("/api/equipo/gestion");
+    if (!r.ok) return;
+    const d = await r.json();
+    const selRol = $("#per-rol");
+    if (selRol.options.length === 0) {
+      (d.roles || []).forEach(x => selRol.add(new Option(x, x)));
+    }
+    pintarLista($("#lista-equipo"), d.personas, p => {
+      const it = el("div", "panel-item" + (p.activa ? "" : " inactiva"));
+      // El área es muy rotativa: quitar solo desactiva (el historial se
+      // conserva) y se puede volver a activar con el mismo botón.
+      const quitar = el("button", "panel-quitar", p.activa ? "✕" : "↺");
+      quitar.title = p.activa ? "Quitar del equipo" : "Volver a activar";
+      quitar.onclick = async () => {
+        const ruta = p.activa ? "/api/equipo/quitar" : "/api/equipo/guardar";
+        const cuerpo = p.activa
+          ? { nombre: p.nombre }
+          : { nombre: p.nombre, rol: p.rol, turno: p.turno, activa: true };
+        await fetch(ruta, {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(cuerpo),
+        });
+        cargarEquipo(); cargarTurnos();
+      };
+      it.append(quitar);
+      it.append(el("span", "nom", p.nombre));
+      it.append(el("span", "tag", "T" + p.turno));
+      it.append(el("span", "det", p.rol + (p.activa ? "" : " · inactiva")));
+      it.onclick = e => {                       // clic para editar
+        if (e.target === quitar) return;
+        $("#per-nombre").value = p.nombre;
+        $("#per-rol").value = p.rol;
+        $("#per-turno").value = String(p.turno);
+      };
+      return it;
+    });
+  } catch (e) { /* reintenta al abrir de nuevo */ }
+}
+
+async function guardarPersona() {
+  const nombre = $("#per-nombre").value.trim();
+  if (!nombre) { $("#per-nombre").focus(); return; }
+  const r = await fetch("/api/equipo/guardar", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      nombre, rol: $("#per-rol").value,
+      turno: Number($("#per-turno").value), activa: true,
+    }),
+  });
+  if (r.ok) {
+    $("#per-nombre").value = "";
+    cargarEquipo();
+    cargarTurnos();          // el horario se rearma con el equipo nuevo
+  }
+}
+
+// --- Vista de gestión: solo aparece con el PIN de la jefa de ventas ---
+let esJefa = false;
+
+async function cargarGestion() {
+  if (!esJefa) return;
+  try {
+    const r = await fetch("/api/gestion/resumen");
+    if (!r.ok) return;
+    const d = await r.json();
+    const t = d.totales || {};
+    $("#gestion-totales").textContent =
+      `${d.desde} a ${d.hasta} · ${t.personas || 0} personas · ` +
+      `${t.novedades || 0} novedades · ${t.minutos_cubierto || 0} min cubiertos` +
+      (t.minutos_presencial ? ` · 🏬 ${t.minutos_presencial} min en presencial` : "");
+    pintarLista($("#gestion-personas"), d.personas, p => {
+      const d2 = el("div", "panel-item");
+      d2.append(el("span", "nom", p.nombre));
+      const partes = [`entra ~${p.entrada_tipica}`, `${p.dias_con_senal} días`];
+      if (p.total_novedades) partes.push(`${p.total_novedades} novedades`);
+      if (p.minutos_cubierto) partes.push(`${p.minutos_cubierto} min cubierto`);
+      if (p.veces_cubriendo) partes.push(`cubrió ${p.veces_cubriendo}`);
+      if (p.minutos_presencial) partes.push(`🏬 ${p.minutos_presencial} min presencial`);
+      d2.append(el("span", "det", partes.join(" · ")));
+      return d2;
+    });
+  } catch (e) { /* se reintenta al pulsar Actualizar */ }
+}
+
+function aplicarRol(rol) {
+  esJefa = rol === "jefa";
+  $("#sec-gestion").hidden = !esJefa;
+  $("#sec-equipo").hidden = !esJefa;
+  if (esJefa) { cargarGestion(); cargarEquipo(); }
+}
+
+function iniciarPanelTurnos() {
+  $("#panel-toggle").onclick = () => {
+    const p = $("#panel-turnos");
+    p.classList.toggle("abierto");
+    if (p.classList.contains("abierto")) cargarTurnos();
+  };
+
+  $("#panel-yo-sel").onchange = e => {
+    const v = e.target.value;
+    if (v) localStorage.setItem(YO_KEY, v); else localStorage.removeItem(YO_KEY);
+    $("#nov-nombre").value = v;
+    $("#fila-mi-estado").hidden = !v;
+    enviarPresencia().then(cargarTurnos);
+  };
+
+  // "Estoy:" — el asesor dice en qué está, así soporte no lo confunde con una
+  // ausencia sin explicación.
+  $("#mi-estado").onchange = async e => {
+    const nombre = yoNombre();
+    if (!nombre) return;
+    await fetch("/api/turnos/estado-asesor", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ nombre, estado: e.target.value }),
+    });
+    cargarTurnos();
+  };
+
+  $("#btn-gestion-refrescar").onclick = cargarGestion;
+  $("#per-guardar").onclick = guardarPersona;
+  $("#per-nombre").addEventListener("keydown", e => { if (e.key === "Enter") guardarPersona(); });
+
+  // Silenciar / reactivar el aviso sonoro (queda guardado en el navegador)
+  const pintarMudo = () => {
+    const b = $("#btn-mudo");
+    b.textContent = estaMudo() ? "🔕" : "🔔";
+    b.title = estaMudo() ? "Aviso sonoro silenciado" : "Silenciar el aviso sonoro";
+  };
+  $("#btn-mudo").onclick = () => {
+    localStorage.setItem(MUDO_KEY, estaMudo() ? "0" : "1");
+    pintarMudo();
+    if (!estaMudo()) sonar(false);        // prueba de sonido al reactivar
+  };
+  pintarMudo();
+
+  // Salir: sin esto, quien entró con un PIN no podía cambiar de rol en 7 días.
+  $("#btn-salir").onclick = async () => {
+    await fetch("/api/salir", { method: "POST" });
+    localStorage.removeItem(YO_KEY);
+    location.reload();
+  };
+
+  // --- Ajustes del día ---
+  $("#btn-abrir-ajuste").onclick = () => {
+    const f = $("#form-ajuste");
+    f.hidden = !f.hidden;
+    if (!f.hidden) pintarCamposAjuste();
+  };
+  $("#aj-tipo").onchange = pintarCamposAjuste;
+  $("#aj-cancelar").onclick = () => {
+    $("#form-ajuste").hidden = true;
+    $("#aj-nota").value = ""; $("#aj-hora").value = "";
+  };
+  $("#aj-guardar").onclick = async () => {
+    const nombre = $("#aj-nombre").value;
+    if (!nombre) { $("#aj-nombre").focus(); return; }
+    const o = $("#aj-tipo").selectedOptions[0];
+    const pide = o ? (o.dataset.pide || "") : "";
+    const cuerpo = {
+      nombre, tipo: $("#aj-tipo").value, nota: $("#aj-nota").value,
+      autor: yoNombre(),
+    };
+    if (pide === "turno") cuerpo.turno = Number($("#aj-turno").value);
+    if (pide === "hora") {
+      const h = $("#aj-hora").value.trim();
+      if (!/^\d{1,2}:\d{2}$/.test(h)) { $("#aj-hora").focus(); return; }
+      cuerpo.hora = h;
+    }
+    const r = await fetch("/api/turnos/ajuste", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(cuerpo),
+    });
+    const d = await r.json();
+    if (d.error) { alert(d.error); return; }
+    $("#aj-nota").value = ""; $("#aj-hora").value = "";
+    $("#form-ajuste").hidden = true;
+    cargarTurnos();
+  };
+
+  $("#btn-abrir-novedad").onclick = () => {
+    const f = $("#form-novedad");
+    f.hidden = !f.hidden;
+    if (!f.hidden && !$("#nov-nombre").value) $("#nov-nombre").value = yoNombre();
+  };
+  $("#nov-cancelar").onclick = () => { $("#form-novedad").hidden = true; $("#nov-nota").value = ""; };
+  $("#nov-guardar").onclick = async () => {
+    const nombre = $("#nov-nombre").value;
+    if (!nombre) { $("#nov-nombre").focus(); return; }
+    await fetch("/api/turnos/novedad", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        nombre, tipo: $("#nov-tipo").value, nota: $("#nov-nota").value,
+        reportado_por: yoNombre(),
+      }),
+    });
+    $("#nov-nota").value = "";
+    $("#form-novedad").hidden = true;
+    cargarTurnos();
+  };
+
+  // Presencia automática: al abrir la calculadora y luego cada pocos minutos.
+  enviarPresencia();
+  cargarTurnos();
+  clearInterval(panelTimer); clearInterval(latidoTimer);
+  panelTimer = setInterval(cargarTurnos, REFRESCO_PANEL_MS);
+  latidoTimer = setInterval(enviarPresencia, LATIDO_MS);
+
+  // Al volver a la pestaña, refrescar de inmediato.
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden) { enviarPresencia(); cargarTurnos(); }
+  });
+}
+
+// =====================================================
 // INICIO
 // =====================================================
 let appIniciada = false;
@@ -476,6 +1025,7 @@ function iniciarApp() {
     appIniciada = true;
     nuevaFilaRetail(); calcularRetail();
     nuevaFilaMay();
+    iniciarPanelTurnos();
   }
   cargarEstadoPrecios();
 }

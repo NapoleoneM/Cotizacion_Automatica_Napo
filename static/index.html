@@ -152,6 +152,136 @@
     </div>
   </section>
 
+  <!-- ============ PANEL LATERAL: TURNOS Y COBERTURA ============
+       Va FUERA de la calculadora (fijo al borde derecho). Colapsado por
+       defecto; la lengüeta muestra un contador rojo cuando hay vendedores
+       que soporte debe cubrir. -->
+  <aside class="panel-turnos" id="panel-turnos">
+    <button class="panel-lengueta" id="panel-toggle" title="Turnos y cobertura">
+      <span class="panel-lengueta-txt">Turnos</span>
+      <span class="panel-badge" id="panel-badge" hidden>0</span>
+    </button>
+
+    <div class="panel-cuerpo">
+      <div class="panel-cab">
+        <strong>Turnos y cobertura</strong>
+        <span class="panel-cab-btns">
+          <button class="panel-mini" id="btn-mudo" title="Silenciar el aviso sonoro">🔔</button>
+          <button class="panel-mini" id="btn-salir" title="Salir / cambiar de PIN">salir</button>
+        </span>
+      </div>
+      <!-- Sello con la fecha y hora del SERVIDOR, dibujado como imagen para que
+           un pantallazo no se pueda alterar editando el HTML del navegador. -->
+      <img class="panel-sello" id="panel-sello" alt="fecha y hora del servidor">
+
+      <div class="panel-yo">
+        <label for="panel-yo-sel">Soy:</label>
+        <select id="panel-yo-sel"><option value="">— elige tu nombre —</option></select>
+      </div>
+      <div class="panel-yo" id="fila-mi-estado" hidden>
+        <label for="mi-estado">Estoy:</label>
+        <select id="mi-estado"></select>
+      </div>
+      <div class="aviso" id="panel-aviso" hidden></div>
+
+      <div class="panel-sec">
+        <div class="panel-sec-tit rojo">Requieren cobertura <span id="n-cob"></span></div>
+        <div class="panel-lista" id="lista-cobertura"></div>
+      </div>
+
+      <div class="panel-sec">
+        <div class="panel-sec-tit amarillo">Ausencia informada <span id="n-aus"></span></div>
+        <div class="panel-lista" id="lista-ausencia"></div>
+      </div>
+
+      <div class="panel-sec">
+        <div class="panel-sec-tit amarillo">Novedades de hoy</div>
+        <div class="panel-lista" id="lista-novedades"></div>
+      </div>
+
+      <div class="panel-sec">
+        <div class="panel-sec-tit verde">En línea <span id="n-linea"></span></div>
+        <div class="panel-lista" id="lista-linea"></div>
+      </div>
+
+      <details class="panel-sec">
+        <summary class="panel-sec-tit gris">Aún no entran</summary>
+        <div class="panel-lista" id="lista-porentrar"></div>
+      </details>
+
+      <details class="panel-sec">
+        <summary class="panel-sec-tit gris">Hoy no se espera</summary>
+        <div class="panel-lista" id="lista-nospera"></div>
+      </details>
+
+      <!-- Movimientos de horario de HOY: no tocan el plan de la semana -->
+      <div class="panel-sec">
+        <div class="panel-sec-tit gris">Ajustes de hoy <span id="n-ajustes"></span></div>
+        <div class="panel-lista" id="lista-ajustes"></div>
+        <button class="panel-btn-gris panel-btn-full" id="btn-abrir-ajuste">Mover horario de hoy</button>
+        <div id="form-ajuste" hidden>
+          <select id="aj-nombre"></select>
+          <select id="aj-tipo"></select>
+          <select id="aj-turno" hidden>
+            <option value="1">Turno 1</option>
+            <option value="2">Turno 2</option>
+            <option value="3">Turno 3</option>
+          </select>
+          <input type="text" id="aj-hora" hidden maxlength="5" placeholder="Hora de entrada (11:00)">
+          <input type="text" id="aj-nota" maxlength="200" placeholder="Motivo (opcional)">
+          <div class="panel-btns">
+            <button class="btn-verde" id="aj-guardar">Guardar</button>
+            <button class="panel-btn-gris" id="aj-cancelar">Cancelar</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel-sec">
+        <button class="btn-naranja panel-btn-full" id="btn-abrir-novedad">Reportar novedad</button>
+        <div id="form-novedad" hidden>
+          <select id="nov-nombre"></select>
+          <select id="nov-tipo">
+            <option>Ausencia</option>
+            <option>Llegada tarde</option>
+            <option>Permiso</option>
+            <option>Incapacidad</option>
+            <option>Cita médica</option>
+          </select>
+          <input type="text" id="nov-nota" maxlength="200" placeholder="Nota (opcional)">
+          <div class="panel-btns">
+            <button class="btn-verde" id="nov-guardar">Guardar</button>
+            <button class="panel-btn-gris" id="nov-cancelar">Cancelar</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Solo visible con el PIN de la jefa de ventas -->
+      <div class="panel-sec" id="sec-equipo" hidden>
+        <div class="panel-sec-tit oro">Equipo del chat center</div>
+        <div class="panel-lista" id="lista-equipo"></div>
+        <div id="form-persona">
+          <input type="text" id="per-nombre" maxlength="40" placeholder="Primer nombre">
+          <select id="per-rol"></select>
+          <select id="per-turno">
+            <option value="1">Turno 1</option>
+            <option value="2">Turno 2</option>
+            <option value="3">Turno 3</option>
+          </select>
+          <button class="btn-verde panel-btn-full" id="per-guardar">Agregar / actualizar</button>
+        </div>
+      </div>
+
+      <div class="panel-sec" id="sec-gestion" hidden>
+        <div class="panel-sec-tit oro">Gestión · semana en curso</div>
+        <div id="gestion-totales" class="panel-gestion-tot"></div>
+        <div class="panel-lista" id="gestion-personas"></div>
+        <button class="panel-btn-gris panel-btn-full" id="btn-gestion-refrescar">Actualizar resumen</button>
+      </div>
+
+      <p class="panel-pie" id="panel-semana"></p>
+    </div>
+  </aside>
+
   <footer class="creditos" id="creditos" hidden>
     Desarrollado por
     <a href="https://www.instagram.com/camilo_gra67" target="_blank" rel="noopener">@camilo_gra67</a>
