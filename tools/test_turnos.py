@@ -85,7 +85,6 @@ def chk(cond, msg):
 # =====================================================
 h = turnos.parsear_horario(META)
 chk("error" not in h, f"Parsea sin error ({h.get('error','')})")
-chk(h.get("semana", "").startswith("Semana del 27"), f"Detecta la semana: {h.get('semana')!r}")
 chk(set(h.get("turnos", {})) == {1, 2, 3}, f"Detecta 3 turnos: {sorted(h.get('turnos', {}))}")
 chk(h["turnos"][1]["sem"] == (8.0, 16.0), f"Turno 1 L-V 8:00-16:00 -> {h['turnos'][1]['sem']}")
 chk(h["turnos"][1]["sab"] == (8.0, 15.0), f"Turno 1 sábado 8:00-15:00 -> {h['turnos'][1]['sab']}")
@@ -107,6 +106,26 @@ chk(busca("Juliana", 2) and busca("Juliana", 2)[0]["estado"] == "santafe",
     "Juliana el miércoles = Santafé (celda amarilla)")
 chk(not any(a["nombre"].lower().startswith(("lunes", "sabado", "domingo")) for a in h["asignaciones"]),
     "No confunde los encabezados de día con nombres")
+
+# =====================================================
+# 1b) Semana calculada sola (ya no se lee de la hoja)
+# =====================================================
+# 2026-07-27 es lunes; su sábado es 2026-08-01 (cruza de julio a agosto).
+sem_lunes = turnos._semana_actual(datetime(2026, 7, 27, 9, 0))
+chk(sem_lunes == "Semana del 27 de Julio al 2 de Agosto de 2026",
+    f"Lunes en la semana -> {sem_lunes!r}")
+
+sem_sab_antes = turnos._semana_actual(datetime(2026, 8, 1, 22, 59))
+chk(sem_sab_antes == "Semana del 27 de Julio al 2 de Agosto de 2026",
+    f"Sábado 10:59pm -> aún semana actual: {sem_sab_antes!r}")
+
+sem_sab_corte = turnos._semana_actual(datetime(2026, 8, 1, 23, 0))
+chk(sem_sab_corte == "Semana del 3 al 9 de Agosto de 2026",
+    f"Sábado 11:00pm -> ya cambia a la semana siguiente: {sem_sab_corte!r}")
+
+sem_domingo = turnos._semana_actual(datetime(2026, 8, 2, 10, 0))
+chk(sem_domingo == "Semana del 3 al 9 de Agosto de 2026",
+    f"Domingo -> sigue mostrando la semana siguiente (no vuelve atrás): {sem_domingo!r}")
 
 # =====================================================
 # 2) Cobertura según la hora

@@ -548,7 +548,7 @@ function renderPanel(d) {
   refrescarSello();
   revisarAvisos(d);
   $("#panel-semana").textContent =
-    d.semana || (d.fuente === "equipo" ? "Turnos según el equipo configurado" : "");
+    d.semana + (d.fuente === "equipo" ? " · usando equipo de la app" : "");
 
   if (!d.configurado) {
     const av = $("#panel-aviso");

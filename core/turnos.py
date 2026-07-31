@@ -22,7 +22,7 @@ import os
 import re
 import time
 import unicodedata
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import gspread
 
@@ -176,16 +176,6 @@ def parsear_horario(meta, gid=None):
     if not col_dia:
         return {"error": "No se encontró la fila con los días (Lunes, Martes, …)."}
 
-    # --- 3) Semana (título tipo "Semana del 27 de Julio al 2 de Agosto") ---
-    semana = ""
-    for r in range(0, fila_encabezado + 1):
-        for texto, _bg in grid[r]:
-            if _norm(texto).startswith("semana"):
-                semana = texto
-                break
-        if semana:
-            break
-
     # --- 4) Bloques de turno ---
     marcas = []   # (fila, numero_turno, texto)
     for r in range(fila_encabezado + 1, len(grid)):
@@ -226,7 +216,7 @@ def parsear_horario(meta, gid=None):
                     "estado": estado, "color": color,
                 })
 
-    return {"exito": True, "semana": semana, "turnos": horarios,
+    return {"exito": True, "turnos": horarios,
             "asignaciones": asignaciones,
             "estados_leyenda": sorted(set(leyenda.values()))}
 
@@ -259,9 +249,39 @@ def horario_desde_equipo(personas):
                 "nombre": p["nombre"], "turno": int(p.get("turno") or 1),
                 "dia": dia, "estado": "normal", "color": "#FFFFFF",
             })
-    return {"exito": True, "semana": "", "turnos": dict(TURNOS),
+    return {"exito": True, "turnos": dict(TURNOS),
             "asignaciones": asignaciones, "roles": roles,
             "estados_leyenda": [], "fuente": "equipo"}
+
+
+_MESES = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio",
+          "agosto", "septiembre", "octubre", "noviembre", "diciembre"]
+
+# A partir de esta hora del sábado, el rótulo ya muestra la semana siguiente
+# (lunes a domingo), en vez de esperar a que empiece el domingo o el lunes.
+_CORTE_SEMANA_DIA, _CORTE_SEMANA_HORA = 5, 23  # 5 = sábado
+
+
+def _semana_actual(ahora=None):
+    """Rango Lunes-Domingo de la semana en curso, calculado (no se lee de la
+    hoja): 'Semana del 3 al 9 de Agosto de 2026'. El corte a la semana
+    siguiente es el sábado a las 11pm, no la medianoche del domingo."""
+    ahora = ahora or datetime.now()
+    dow = ahora.weekday()  # 0=lunes … 6=domingo
+    # El corte ocurre el sábado a las 11pm y se mantiene todo el domingo (si
+    # solo mirara el sábado, el domingo "volvería" a calcular la semana vieja,
+    # porque domingo es, calendario en mano, el último día de esa semana).
+    corta = dow == 6 or (dow == _CORTE_SEMANA_DIA and ahora.hour >= _CORTE_SEMANA_HORA)
+    if corta:
+        lunes = ahora + timedelta(days=(7 - dow))  # próximo lunes
+    else:
+        lunes = ahora - timedelta(days=dow)
+    lunes = lunes.replace(hour=0, minute=0, second=0, microsecond=0)
+    domingo = lunes + timedelta(days=6)
+    mes_ini, mes_fin = _MESES[lunes.month - 1].capitalize(), _MESES[domingo.month - 1].capitalize()
+    if lunes.month == domingo.month:
+        return f"Semana del {lunes.day} al {domingo.day} de {mes_fin} de {domingo.year}"
+    return f"Semana del {lunes.day} de {mes_ini} al {domingo.day} de {mes_fin} de {domingo.year}"
 
 
 def _rol_cubrible(rol):
@@ -352,7 +372,7 @@ def calcular_cobertura(horario, ahora, presencia=None, estados=None,
     res = {"requieren_cobertura": [], "ausencia_informada": [], "en_linea": [],
            "por_entrar": [], "no_se_espera": [], "novedades": novedades,
            "ajustes": sorted(ajustes.values(), key=lambda x: x.get("ts", 0)),
-           "dia": DIAS[dia_idx], "semana": horario.get("semana", ""),
+           "dia": DIAS[dia_idx], "semana": _semana_actual(ahora),
            "hora": ahora.strftime("%I:%M %p")}
 
     nov_por_clave = {}
