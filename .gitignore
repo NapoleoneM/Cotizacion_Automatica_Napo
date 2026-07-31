@@ -7,6 +7,9 @@ credentials/
 # Estado del día del panel de turnos (presencia y novedades) — solo servidor
 datos/
 
+# Plantilla generada localmente para importar a Sheets (no es código, no se sube)
+Horarios_plantilla.xlsx
+
 # Entornos virtuales
 .venv/
 venv/
