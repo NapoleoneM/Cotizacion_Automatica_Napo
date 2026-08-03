@@ -27,7 +27,7 @@ from datetime import datetime, timedelta
 import gspread
 
 from core.app_config import log
-from core.almacen import ESTADOS_ASESOR
+from core.almacen import ESTADOS_ASESOR, ESTADO_PRESENCIAL
 # Por defecto se usa el mismo documento espejo al que ya tiene acceso el
 # service account; basta agregarle una hoja con el cuadro de horarios.
 from core.mayorista_logic import _SPREADSHEET_ID as _ESPEJO_ID
@@ -49,11 +49,17 @@ TURNOS = {
 DIAS = ["lunes", "martes", "miercoles", "jueves", "viernes", "sabado", "domingo"]
 
 # Estados de la leyenda. 'cubrir' indica si, estando en ese estado, se espera
-# que la persona esté atendiendo (y por tanto soporte debe cubrirla si falta).
+# que la persona esté en su turno (y por tanto soporte debe intervenir si
+# falta). 'sede' marca las sedes de atención presencial (Santa Fe, El
+# Tesoro, Mostrador…): la persona SÍ está trabajando, pero no en chats —
+# sus chats quedan sin atender todo el turno, así que van como ausencia
+# informada (con "Yo lo cubro"), no como alarma roja ni como "no se espera".
 ESTADOS = {
     "normal": {"cubrir": True, "etiqueta": ""},
     "reparte chats": {"cubrir": True, "etiqueta": "Reparte chats"},
-    "santafe": {"cubrir": True, "etiqueta": "Santafé"},
+    "santafe": {"cubrir": True, "sede": True, "etiqueta": "En Santa Fe (CC)"},
+    "tesoro": {"cubrir": True, "sede": True, "etiqueta": "En El Tesoro (CC)"},
+    "mostrador": {"cubrir": True, "sede": True, "etiqueta": "En el mostrador"},
     "compensatorio": {"cubrir": False, "etiqueta": "Compensatorio"},
     "ausencia": {"cubrir": False, "etiqueta": "Ausencia"},
     "cambio de horario": {"cubrir": False, "etiqueta": "Cambio de horario"},
@@ -415,6 +421,16 @@ def calcular_cobertura(horario, ahora, presencia=None, estados=None,
         if ahora_h > fin:
             continue                                # jornada terminada
 
+        # Sede presencial: plan conocido de antemano, no depende de señal ni
+        # de novedad — sus chats están sin atender todo el turno.
+        if info.get("sede"):
+            if _rol_cubrible(rol):
+                item["estado"] = a["estado"]
+                item["estado_etq"] = info["etiqueta"]
+                item["sede"] = True
+                res["ausencia_informada"].append(item)
+            continue
+
         pres = presencia.get(k) or {}
         ts = pres.get("ts")
         mins = None if not ts else max(0.0, (time.time() - ts) / 60.0)
@@ -430,6 +446,8 @@ def calcular_cobertura(horario, ahora, presencia=None, estados=None,
             item["estado"] = est["estado"]
             item["estado_etq"] = ESTADOS_ASESOR[est["estado"]]["etiqueta"]
             item["desde_estado"] = datetime.fromtimestamp(est["ts"]).strftime("%I:%M %p")
+            if est["estado"] == ESTADO_PRESENCIAL:
+                item["sede"] = True
             if _rol_cubrible(rol):
                 res["ausencia_informada"].append(item)
             continue
@@ -438,6 +456,8 @@ def calcular_cobertura(horario, ahora, presencia=None, estados=None,
         if nov and (mins is None or mins > UMBRAL_INACTIVO_MIN):
             item["novedad"] = nov.get("tipo")
             item["nota"] = nov.get("nota", "")
+            if nov.get("tipo") == "Apoyo a presencial":
+                item["sede"] = True
             if _rol_cubrible(rol):
                 res["ausencia_informada"].append(item)
             continue

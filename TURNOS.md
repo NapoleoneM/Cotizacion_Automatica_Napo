@@ -131,14 +131,20 @@ Formato esperado:
   Si el rótulo trae horas con `am/pm`, esas manda; si son ambiguas (`2:00 a 9:00`)
   se usan los horarios de respaldo definidos en `core/turnos.py` → `TURNOS`.
 - Debajo de cada día, los **primeros nombres** de los asesores de ese turno.
-- Opcional: un título tipo `Semana del 27 de Julio al 2 de Agosto` (se muestra
-  al pie del panel).
+- El título `Semana del ... al ...` **ya no hace falta escribirlo**: el panel
+  calcula solo la semana en curso (corte el sábado a las 11pm).
 - Una **leyenda** con el texto del estado y **el color a su derecha**:
-  `Reparte Chats`, `Compensatorio`, `Ausencia`, `Cambio de Horario`, `Santafe`.
+  `Reparte Chats`, `Compensatorio`, `Ausencia`, `Cambio de Horario`, `Santafe`,
+  `Tesoro`, `Mostrador`.
 
-Los **colores de las celdas** se leen igual que en la tabla de precios: si una
-persona está pintada de `Compensatorio`, ese día **no se pide cubrirla**.
-Estados que sí se esperan trabajando: normal, *Reparte Chats* y *Santafé*.
+Los **colores de las celdas** se leen igual que en la tabla de precios. Hay
+tres formas de "no cubrir chats" y el panel las trata distinto:
+
+| Estado | Significa | Dónde aparece |
+|---|---|---|
+| `Compensatorio`, `Ausencia`, `Cambio de Horario` | No trabaja ese día | "Hoy no se espera" (sin alarma, sin botón de cubrir) |
+| `Santafe`, `Tesoro`, `Mostrador` | Está trabajando, pero **presencial** en esa sede — sus chats quedan sin atender todo el turno | "Ausencia informada" (morado, con "Yo lo cubro"), igual que el traslado a zona presencial que reporta el propio asesor |
+| (celda blanca / sin color) | Normal, o `Reparte Chats` | Cobertura normal por presencia |
 
 ### Hoja opcional `Roles`
 

@@ -17,6 +17,8 @@ ROSA = {"red": 0.76, "green": 0.48, "blue": 0.63}        # Ausencia
 MORA = {"red": 0.55, "green": 0.49, "blue": 0.76}        # Reparte Chats
 GRIS = {"red": 0.72, "green": 0.72, "blue": 0.72}        # Cambio de Horario
 AMAR = {"red": 1.0, "green": 1.0, "blue": 0.0}           # Santafe
+VERDE = {"red": 0.20, "green": 0.65, "blue": 0.32}       # Tesoro
+CELESTE = {"red": 0.60, "green": 0.80, "blue": 0.95}     # Mostrador
 
 
 def cel(txt="", bg=None):
@@ -41,14 +43,14 @@ FILAS = [
          cel("Estefania"), cel("Estefania"), cel("Estefania")),
     fila(cel(), cel("Ximena"), cel("Ximena"), cel("Ximena", AZUL), cel("Ximena"),
          cel("Ximena"), cel("Ximena"), cel("Cristian", MORA)),
-    fila(cel(), cel("Santiago"), cel("Santiago"), cel("Santiago"), cel("Santiago"),
+    fila(cel(), cel("Santiago"), cel("Santiago"), cel("Santiago"), cel("Santiago", CELESTE),
          cel("Santiago"), cel("Santiago"), cel()),
     fila(cel(), cel("Yessika"), cel("Yessika", ROSA), cel("Yessika"), cel("Yessika"),
          cel("Yessika"), cel("Yessika"), cel("Yessika")),
     fila(),
     # --- Turno 2 ---
     fila(cel("2 Turno: 11:00am a 7:00pm, Sábado 10:00am a 5:00pm"),
-         cel("Gisela"), cel("Gisela"), cel("Gisela"), cel("Gisela"),
+         cel("Gisela"), cel("Gisela"), cel("Gisela", VERDE), cel("Gisela"),
          cel("Gisela"), cel("Gisela"), cel()),
     fila(cel(), cel("Angelica"), cel("Angelica"), cel("Angelica"), cel("Angelica"),
          cel("Angelica", GRIS), cel("Angelica"), cel()),
@@ -66,6 +68,8 @@ FILAS = [
     fila(*([cel()] * 20 + [cel("Ausencia"), cel("", ROSA)])),
     fila(*([cel()] * 20 + [cel("Cambio de Horario"), cel("", GRIS)])),
     fila(*([cel()] * 20 + [cel("Santafe"), cel("", AMAR)])),
+    fila(*([cel()] * 20 + [cel("Tesoro"), cel("", VERDE)])),
+    fila(*([cel()] * 20 + [cel("Mostrador"), cel("", CELESTE)])),
 ]
 
 META = {"sheets": [{"data": [{"rowData": FILAS}]}]}
@@ -104,6 +108,10 @@ chk(busca("Yessika", 1) and busca("Yessika", 1)[0]["estado"] == "ausencia",
     "Yessika el martes = Ausencia (celda rosa)")
 chk(busca("Juliana", 2) and busca("Juliana", 2)[0]["estado"] == "santafe",
     "Juliana el miércoles = Santafé (celda amarilla)")
+chk(busca("Gisela", 2) and busca("Gisela", 2)[0]["estado"] == "tesoro",
+    "Gisela el miércoles = Tesoro (celda verde)")
+chk(busca("Santiago", 3) and busca("Santiago", 3)[0]["estado"] == "mostrador",
+    "Santiago el jueves = Mostrador (celda celeste)")
 chk(not any(a["nombre"].lower().startswith(("lunes", "sabado", "domingo")) for a in h["asignaciones"]),
     "No confunde los encabezados de día con nombres")
 
@@ -164,6 +172,26 @@ chk("Ximena" not in {x["nombre"] for x in c4["requieren_cobertura"]},
     "Miércoles: Ximena (Compensatorio) NO se pide cubrir")
 chk("Ximena" in {x["nombre"] for x in c4["no_se_espera"]},
     "Miércoles: Ximena aparece en 'no se espera' con su etiqueta")
+
+# Miércoles 1:00pm: Gisela en Tesoro (turno 2, 11am-7pm) -> ausencia informada
+# con sede=True, NO alarma roja y NO "no se espera" (sigue trabajando, solo
+# que sus chats quedan sin atender).
+MIER_TARDE = datetime(2026, 7, 29, 13, 0)
+c4b = turnos.calcular_cobertura(h, MIER_TARDE)
+gisela_aus = [x for x in c4b["ausencia_informada"] if x["nombre"] == "Gisela"]
+chk(bool(gisela_aus) and gisela_aus[0].get("sede") is True,
+    f"Miércoles 1pm: Gisela (Tesoro) -> ausencia informada con sede=True: {gisela_aus}")
+chk("Gisela" not in {x["nombre"] for x in c4b["requieren_cobertura"]},
+    "Gisela (Tesoro) NO dispara alarma roja")
+chk("Gisela" not in {x["nombre"] for x in c4b["no_se_espera"]},
+    "Gisela (Tesoro) NO cae en 'no se espera' (sigue trabajando, solo que presencial)")
+
+# Jueves 10:00am: Santiago en Mostrador (turno 1, 8am-4pm) -> mismo caso
+JUEVES_MOSTRADOR = datetime(2026, 7, 30, 10, 0)
+c4c = turnos.calcular_cobertura(h, JUEVES_MOSTRADOR)
+santiago_aus = [x for x in c4c["ausencia_informada"] if x["nombre"] == "Santiago"]
+chk(bool(santiago_aus) and santiago_aus[0].get("sede") is True,
+    f"Jueves 10am: Santiago (Mostrador) -> ausencia informada con sede=True: {santiago_aus}")
 
 # Antes de la hora: 7:30am nadie del turno 1 debe alertar
 TEMPRANO = datetime(2026, 7, 27, 7, 30)

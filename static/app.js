@@ -585,13 +585,15 @@ function renderPanel(d) {
   });
 
   pintarLista($("#lista-ausencia"), aus, x => {
-    // El traslado a la zona presencial se resalta: la persona está trabajando,
-    // pero sus chats quedaron sin atender por prioridad de cliente presencial.
-    const enPresencial = x.estado === "presencial" || x.novedad === "Apoyo a presencial";
-    const d2 = itemBase(x, enPresencial ? "morado" : "amarillo");
-    let det = x.estado_etq ? `${x.estado_etq} desde ${x.desde_estado || ""}` : "";
+    // Sede presencial (zona presencial, Santa Fe, El Tesoro, Mostrador…): la
+    // persona está trabajando, pero sus chats quedaron sin atender por
+    // prioridad de cliente presencial — se resalta distinto de una ausencia.
+    const d2 = itemBase(x, x.sede ? "morado" : "amarillo");
+    let det = x.estado_etq
+      ? `${x.estado_etq}${x.desde_estado ? " desde " + x.desde_estado : ` · turno ${x.desde}-${x.hasta}`}`
+      : "";
     if (x.novedad) det = `${x.novedad}${x.nota ? " · " + x.nota : ""}`;
-    if (enPresencial) det = "🏬 " + det + " · sus chats quedan libres";
+    if (x.sede) det = "🏬 " + det + " · sus chats quedan libres";
     d2.append(el("span", "det", det));
     d2.append(botonCubrir(x));
     return d2;
