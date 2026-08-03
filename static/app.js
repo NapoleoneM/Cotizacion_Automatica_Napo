@@ -516,22 +516,36 @@ function pintarCamposAjuste() {
   $("#aj-hora").hidden = pide !== "hora";
 }
 
+// Roles de la última carga (nombre normalizado -> rol), para saber si "Soy:"
+// es soporte. Se marca soporte con un "*" al final del nombre en la hoja.
+let rolesActual = {};
+function normalizarClave(s) {
+  return String(s || "").trim().toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+}
+function esSoporteYo() {
+  const rol = rolesActual[normalizarClave(yoNombre())] || "";
+  return rol.toLowerCase().includes("soporte");
+}
+
 // Botón para que soporte se adjudique la cobertura (o la libere). Evita que dos
-// personas entren a la misma cuenta y deja el registro de quién cubrió.
+// personas entren a la misma cuenta y deja el registro de quién cubrió. Solo
+// soporte lo ve — el resto solo ve quién está cubriendo, sin poder tocarlo.
 function botonCubrir(x) {
   const cont = el("div", "panel-cubrir");
   if (x.cubierto_por) {
     cont.append(el("span", "cubre-txt", `cubre ${x.cubierto_por} desde ${x.cubierto_desde || ""}`));
-    const b = el("button", "panel-mini", "liberar");
-    b.onclick = async () => {
-      await fetch("/api/turnos/cubrir/cerrar", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ titular: x.nombre }),
-      });
-      cargarTurnos();
-    };
-    cont.append(b);
-  } else {
+    if (esSoporteYo()) {
+      const b = el("button", "panel-mini", "liberar");
+      b.onclick = async () => {
+        await fetch("/api/turnos/cubrir/cerrar", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ titular: x.nombre }),
+        });
+        cargarTurnos();
+      };
+      cont.append(b);
+    }
+  } else if (esSoporteYo()) {
     const b = el("button", "panel-mini oro", "Yo lo cubro");
     b.onclick = async () => {
       const yo = yoNombre();
@@ -548,6 +562,7 @@ function botonCubrir(x) {
 }
 
 function renderPanel(d) {
+  rolesActual = d.roles || {};
   refrescarSello();
   revisarAvisos(d);
   $("#panel-semana").textContent =
@@ -1020,6 +1035,17 @@ function iniciarPanelTurnos() {
   // Al volver a la pestaña, refrescar de inmediato.
   document.addEventListener("visibilitychange", () => {
     if (!document.hidden) { enviarPresencia(); cargarTurnos(); }
+  });
+
+  // Al cerrar la pestaña o el navegador, marcar "Desconectado". sendBeacon
+  // (no fetch) porque el navegador puede matar una petición normal antes de
+  // que termine durante el cierre; sendBeacon está pensado justo para esto.
+  window.addEventListener("pagehide", () => {
+    const nombre = yoNombre();
+    if (!nombre) return;
+    const body = new Blob([JSON.stringify({ nombre, estado: "desconectado" })],
+                           { type: "application/json" });
+    navigator.sendBeacon("/api/turnos/estado-asesor", body);
   });
 }
 

@@ -56,13 +56,23 @@ DIAS = ["lunes", "martes", "miercoles", "jueves", "viernes", "sabado", "domingo"
 # informada (con "Yo lo cubro"), no como alarma roja ni como "no se espera".
 ESTADOS = {
     "normal": {"cubrir": True, "etiqueta": ""},
-    "reparte chats": {"cubrir": True, "etiqueta": "Reparte chats"},
     "santafe": {"cubrir": True, "sede": True, "etiqueta": "En Santa Fe (CC)"},
+    "cc santafe": {"cubrir": True, "sede": True, "etiqueta": "En Santa Fe (CC)"},
     "tesoro": {"cubrir": True, "sede": True, "etiqueta": "En El Tesoro (CC)"},
+    "cc tesoro": {"cubrir": True, "sede": True, "etiqueta": "En El Tesoro (CC)"},
     "mostrador": {"cubrir": True, "sede": True, "etiqueta": "En el mostrador"},
     "compensatorio": {"cubrir": False, "etiqueta": "Compensatorio"},
     "ausencia": {"cubrir": False, "etiqueta": "Ausencia"},
     "cambio de horario": {"cubrir": False, "etiqueta": "Cambio de horario"},
+}
+
+# Almuerzo por turno (hora_inicio, hora_fin) en formato 24h decimal — respaldo
+# si la tabla "Almuerzo | Desde | Hasta" no está en la hoja (la hoja manda si
+# existe, igual que con TURNOS).
+ALMUERZOS = {
+    1: (12.0, 13.0),
+    2: (13.0, 14.0),
+    3: (18.0, 18.0 + 20 / 60),
 }
 
 
@@ -126,6 +136,41 @@ def _horas_del_texto(texto):
     return res
 
 
+def _hora_simple_a_decimal(texto):
+    """'12:00 pm' -> 12.0, '6:20 pm' -> 18.333…"""
+    m = re.match(r"(\d{1,2})(?::(\d{2}))?\s*(am|pm)", _norm(texto))
+    if not m:
+        return None
+    h = int(m.group(1)) % 12 + (12 if m.group(3) == "pm" else 0)
+    return h + int(m.group(2) or 0) / 60
+
+
+def _parsear_almuerzo(grid):
+    """Tabla aparte 'Almuerzo | Desde | Hasta', una fila por turno (debajo de
+    la leyenda). Devuelve {turno: (inicio_decimal, fin_decimal)}; vacío si la
+    tabla no está en la hoja (se usa el respaldo ALMUERZOS)."""
+    fila_ini = None
+    for r, fila in enumerate(grid):
+        if any(_norm(t).startswith("almuerzo") for t, _ in fila):
+            fila_ini = r
+            break
+    if fila_ini is None:
+        return {}
+    almuerzos = {}
+    for r in range(fila_ini + 1, len(grid)):
+        textos = [t for t, _ in grid[r]]
+        if not any(textos):
+            continue
+        m = re.search(r"(\d+)\s*turno", _norm(textos[0]))
+        if not m:
+            break  # se acabó la tabla
+        desde = _hora_simple_a_decimal(textos[1]) if len(textos) > 1 else None
+        hasta = _hora_simple_a_decimal(textos[2]) if len(textos) > 2 else None
+        if desde is not None and hasta is not None:
+            almuerzos[int(m.group(1))] = (desde, hasta)
+    return almuerzos
+
+
 def parsear_horario(meta, gid=None):
     """Convierte la respuesta de la API (con formato) en la estructura del
     horario. Separado de la descarga para poder probarlo sin red."""
@@ -182,9 +227,19 @@ def parsear_horario(meta, gid=None):
     if not col_dia:
         return {"error": "No se encontró la fila con los días (Lunes, Martes, …)."}
 
+    # --- 3b) Límite del cuadro: la leyenda, la tabla de almuerzo y cualquier
+    # nota posterior NO son turnos ni personas — sin este corte, "1 Turno"
+    # dentro de la tabla de almuerzo se leía como otro bloque de turno más,
+    # y sus horas ("12:00 pm") como si fueran el nombre de un asesor.
+    fila_fin_cuadro = len(grid)
+    for r in range(fila_encabezado + 1, len(grid)):
+        if any(_norm(t).startswith("leyenda") for t, _ in grid[r]):
+            fila_fin_cuadro = r
+            break
+
     # --- 4) Bloques de turno ---
     marcas = []   # (fila, numero_turno, texto)
-    for r in range(fila_encabezado + 1, len(grid)):
+    for r in range(fila_encabezado + 1, fila_fin_cuadro):
         for texto, _bg in grid[r]:
             m = re.search(r"(\d+)\s*turno|turno\s*:?\s*(\d+)", _norm(texto))
             if m:
@@ -196,18 +251,27 @@ def parsear_horario(meta, gid=None):
 
     asignaciones = []
     horarios = {}
+    roles = {}
     for i, (r_ini, num, texto) in enumerate(marcas):
-        r_fin = marcas[i + 1][0] if i + 1 < len(marcas) else len(grid)
+        r_fin = marcas[i + 1][0] if i + 1 < len(marcas) else fila_fin_cuadro
         base = dict(TURNOS.get(num, TURNOS[1]))
         base.update(_horas_del_texto(texto))       # la hoja manda si es clara
         horarios[num] = base
         for r in range(r_ini, r_fin):
             for c, dia_idx in col_dia.items():
-                nombre, color = celda(r, c)
-                if not nombre or len(nombre) > 30:
+                nombre_bruto, color = celda(r, c)
+                if not nombre_bruto or len(nombre_bruto) > 30:
                     continue
-                if _norm(nombre).startswith(tuple(DIAS)):
+                if _norm(nombre_bruto).startswith(tuple(DIAS)):
                     continue
+                # Un "*" al final del nombre marca a soporte: no se le pide
+                # cobertura (no atiende chats), sin necesitar la hoja Roles.
+                es_soporte = nombre_bruto.rstrip().endswith("*")
+                nombre = nombre_bruto.rstrip("* ").strip() if es_soporte else nombre_bruto
+                if not nombre:
+                    continue
+                if es_soporte:
+                    roles[_norm(nombre)] = "Soporte"
                 estado = "normal"
                 if not _es_blanco(color):
                     mejor, mejor_d = None, 999
@@ -224,6 +288,8 @@ def parsear_horario(meta, gid=None):
 
     return {"exito": True, "turnos": horarios,
             "asignaciones": asignaciones,
+            "roles": roles,
+            "almuerzos": _parsear_almuerzo(grid),
             "estados_leyenda": sorted(set(leyenda.values()))}
 
 
@@ -257,6 +323,7 @@ def horario_desde_equipo(personas):
             })
     return {"exito": True, "turnos": dict(TURNOS),
             "asignaciones": asignaciones, "roles": roles,
+            "almuerzos": dict(ALMUERZOS),
             "estados_leyenda": [], "fuente": "equipo"}
 
 
@@ -352,6 +419,16 @@ def _hora_a_decimal(txt):
         return None
 
 
+def _ts_hoy(ahora, hora_decimal):
+    """Timestamp de 'hoy' a la hora decimal dada — para mostrar 'desde
+    12:00 pm' en un estado que se marcó solo, sin que nadie lo haya
+    seleccionado a esa hora exacta."""
+    base = ahora.replace(hour=int(hora_decimal),
+                          minute=int(round((hora_decimal - int(hora_decimal)) * 60)),
+                          second=0, microsecond=0)
+    return base.timestamp()
+
+
 def calcular_cobertura(horario, ahora, presencia=None, estados=None,
                        novedades=None, coberturas=None, ajustes=None):
     """Cruza el horario del día con la realidad (señal, estado, novedades) y la
@@ -441,6 +518,15 @@ def calcular_cobertura(horario, ahora, presencia=None, estados=None,
         est = estados.get(k)
         nov = nov_por_clave.get(k)
 
+        # Almuerzo automático: dentro de la ventana de su turno se marca
+        # solo, sin que el asesor tenga que seleccionarlo — el único que lo
+        # invalida es haber marcado "Desconectado" explícitamente.
+        alm_ini, alm_fin = (horario.get("almuerzos", {}).get(a["turno"])
+                            or ALMUERZOS.get(a["turno"], (None, None)))
+        desconectado = bool(est and est["estado"] == "desconectado")
+        if alm_ini is not None and alm_ini <= ahora_h < alm_fin and not desconectado:
+            est = {"estado": "almuerzo", "ts": _ts_hoy(ahora, alm_ini)}
+
         # 1) Estado explícito que dice que no está atendiendo → ausencia informada
         if est and not ESTADOS_ASESOR.get(est["estado"], {}).get("atiende", True):
             item["estado"] = est["estado"]
@@ -520,14 +606,19 @@ def obtener_horario(ruta_credenciales):
         if "error" in res:
             return res
 
-        # Roles: hoja opcional. Si no existe, no es un problema.
+        # Roles: la hoja opcional 'Roles' se SUMA a los detectados por "*" en
+        # el nombre (no los reemplaza) — así conviven ambos mecanismos.
         try:
             meta_r = ss.fetch_sheet_metadata(params={
                 "includeGridData": "true", "ranges": f"'{_HOJA_ROLES}'!A1:C60",
             })
-            res["roles"] = parsear_roles(meta_r)
+            res["roles"].update(parsear_roles(meta_r))
         except Exception:
-            res["roles"] = {}
+            pass
+
+        # Almuerzo: si la hoja no trae la tabla, se usa el respaldo por código.
+        if not res.get("almuerzos"):
+            res["almuerzos"] = dict(ALMUERZOS)
         return res
     except FileNotFoundError:
         return {"error": "No se encontró el archivo de credenciales."}

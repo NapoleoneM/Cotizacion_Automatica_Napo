@@ -492,7 +492,7 @@ class PresenciaReq(BaseModel):
 
 class EstadoReq(BaseModel):
     nombre: str = Field("", max_length=40)
-    estado: str = Field("disponible", max_length=20)
+    estado: str = Field("en_chat", max_length=20)
 
 
 class NovedadReq(BaseModel):
@@ -538,7 +538,7 @@ def api_turnos_estado():
         ajustes=almacen.ajustes_del_dia(),
     )
     datos.update(base, configurado=True, personas=personas_del_horario(horario),
-                 fuente=horario.get("fuente", ""))
+                 fuente=horario.get("fuente", ""), roles=horario.get("roles", {}))
     return datos
 
 

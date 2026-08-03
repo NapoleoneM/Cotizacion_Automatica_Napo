@@ -14,11 +14,10 @@ from core import turnos
 # --- Colores de la leyenda (como los pinta Google Sheets) ---
 AZUL = {"red": 0.235, "green": 0.47, "blue": 0.847}      # Compensatorio
 ROSA = {"red": 0.76, "green": 0.48, "blue": 0.63}        # Ausencia
-MORA = {"red": 0.55, "green": 0.49, "blue": 0.76}        # Reparte Chats
 GRIS = {"red": 0.72, "green": 0.72, "blue": 0.72}        # Cambio de Horario
-AMAR = {"red": 1.0, "green": 1.0, "blue": 0.0}           # Santafe
-VERDE = {"red": 0.20, "green": 0.65, "blue": 0.32}       # Tesoro
-CELESTE = {"red": 0.60, "green": 0.80, "blue": 0.95}     # Mostrador
+AMAR = {"red": 1.0, "green": 1.0, "blue": 0.0}           # CC Santafe
+VERDE = {"red": 0.20, "green": 0.65, "blue": 0.32}       # CC Tesoro
+CELESTE = {"red": 0.60, "green": 0.80, "blue": 0.95}     # Mostrador (alias viejo)
 
 
 def cel(txt="", bg=None):
@@ -42,11 +41,14 @@ FILAS = [
          cel("Estefania"), cel("Estefania"), cel("Estefania"), cel("Estefania"),
          cel("Estefania"), cel("Estefania"), cel("Estefania")),
     fila(cel(), cel("Ximena"), cel("Ximena"), cel("Ximena", AZUL), cel("Ximena"),
-         cel("Ximena"), cel("Ximena"), cel("Cristian", MORA)),
+         cel("Ximena"), cel("Ximena"), cel()),
     fila(cel(), cel("Santiago"), cel("Santiago"), cel("Santiago"), cel("Santiago", CELESTE),
          cel("Santiago"), cel("Santiago"), cel()),
     fila(cel(), cel("Yessika"), cel("Yessika", ROSA), cel("Yessika"), cel("Yessika"),
          cel("Yessika"), cel("Yessika"), cel("Yessika")),
+    # Soporte: nombre con "*" al final, ninguna hoja Roles necesaria.
+    fila(cel(), cel("Cristian*"), cel("Cristian*"), cel("Cristian*"), cel("Cristian*"),
+         cel("Cristian*"), cel("Cristian*"), cel()),
     fila(),
     # --- Turno 2 ---
     fila(cel("2 Turno: 11:00am a 7:00pm, Sábado 10:00am a 5:00pm"),
@@ -62,14 +64,22 @@ FILAS = [
     fila(cel(), cel("Juliana"), cel("Juliana"), cel("Juliana", AMAR), cel("Juliana"),
          cel("Juliana"), cel("Juliana"), cel()),
     fila(),
+    fila(),
     # --- Leyenda (texto + color a la derecha) ---
-    fila(*([cel()] * 20 + [cel("Reparte Chats"), cel("", MORA)])),
-    fila(*([cel()] * 20 + [cel("Compensatorio"), cel("", AZUL)])),
-    fila(*([cel()] * 20 + [cel("Ausencia"), cel("", ROSA)])),
-    fila(*([cel()] * 20 + [cel("Cambio de Horario"), cel("", GRIS)])),
-    fila(*([cel()] * 20 + [cel("Santafe"), cel("", AMAR)])),
-    fila(*([cel()] * 20 + [cel("Tesoro"), cel("", VERDE)])),
-    fila(*([cel()] * 20 + [cel("Mostrador"), cel("", CELESTE)])),
+    fila(cel("Leyenda:")),
+    fila(cel("Compensatorio"), cel("", AZUL)),
+    fila(cel("CC Tesoro"), cel("", VERDE)),
+    fila(cel("CC Santafe"), cel("", AMAR)),
+    fila(cel("Cambio de horario"), cel("", GRIS)),
+    fila(cel("Ausencia"), cel("", ROSA)),
+    fila(cel("Mostrador"), cel("", CELESTE)),
+    fila(),
+    # --- Tabla de almuerzo (DEBAJO de la leyenda): no debe leerse como turno
+    # ni sus horas como nombres — es justo el bug que se corrigió.
+    fila(cel("Almuerzo"), cel("Desde"), cel("Hasta")),
+    fila(cel("1 Turno"), cel("12:00 pm"), cel("1:00 pm")),
+    fila(cel("2 Turno"), cel("1:00 pm"), cel("2:00 pm")),
+    fila(cel("3 Turno"), cel("6:00 pm"), cel("6:20 pm")),
 ]
 
 META = {"sheets": [{"data": [{"rowData": FILAS}]}]}
@@ -106,14 +116,31 @@ chk(busca("Ximena", 0) and busca("Ximena", 0)[0]["estado"] == "normal",
     "Ximena el lunes = normal (celda blanca)")
 chk(busca("Yessika", 1) and busca("Yessika", 1)[0]["estado"] == "ausencia",
     "Yessika el martes = Ausencia (celda rosa)")
-chk(busca("Juliana", 2) and busca("Juliana", 2)[0]["estado"] == "santafe",
-    "Juliana el miércoles = Santafé (celda amarilla)")
-chk(busca("Gisela", 2) and busca("Gisela", 2)[0]["estado"] == "tesoro",
-    "Gisela el miércoles = Tesoro (celda verde)")
+chk(busca("Juliana", 2) and busca("Juliana", 2)[0]["estado"] == "cc santafe",
+    "Juliana el miércoles = CC Santafe (celda amarilla)")
+chk(busca("Gisela", 2) and busca("Gisela", 2)[0]["estado"] == "cc tesoro",
+    "Gisela el miércoles = CC Tesoro (celda verde)")
 chk(busca("Santiago", 3) and busca("Santiago", 3)[0]["estado"] == "mostrador",
-    "Santiago el jueves = Mostrador (celda celeste)")
+    "Santiago el jueves = Mostrador (celda celeste, alias viejo)")
 chk(not any(a["nombre"].lower().startswith(("lunes", "sabado", "domingo")) for a in h["asignaciones"]),
     "No confunde los encabezados de día con nombres")
+
+# =====================================================
+# 1c) Soporte por "*", tabla de Almuerzo y límite del cuadro (Leyenda)
+# =====================================================
+nombres = {a["nombre"] for a in h["asignaciones"]}
+chk("Cristian" in nombres, f"'Cristian*' se lee sin el asterisco: {sorted(nombres)}")
+chk("Cristian*" not in nombres, "El asterisco no se queda pegado al nombre")
+chk(h.get("roles", {}).get("cristian") == "Soporte",
+    f"El '*' registra el rol Soporte para Cristian: {h.get('roles')}")
+
+basura = {"12:00 pm", "1:00 pm", "2:00 pm", "6:00 pm", "6:20 pm", "Desde",
+          "Hasta", "Almuerzo", "1 Turno", "2 Turno", "3 Turno", "Leyenda:"}
+chk(not (nombres & basura),
+    f"La leyenda y la tabla de Almuerzo NO contaminan la lista de personas: {nombres & basura}")
+
+chk(h.get("almuerzos") == {1: (12.0, 13.0), 2: (13.0, 14.0), 3: (18.0, 18.0 + 20 / 60)},
+    f"Lee la tabla de Almuerzo (Desde/Hasta por turno): {h.get('almuerzos')}")
 
 # =====================================================
 # 1b) Semana calculada sola (ya no se lee de la hoja)
@@ -145,6 +172,8 @@ c = turnos.calcular_cobertura(h, LUNES)
 nombres_cob = {x["nombre"] for x in c["requieren_cobertura"]}
 chk("Estefania" in nombres_cob and "Ximena" in nombres_cob,
     f"Lunes 9:00am sin señal -> turno 1 requiere cobertura: {sorted(nombres_cob)}")
+chk("Cristian" not in nombres_cob,
+    f"Cristian (soporte por '*') nunca se pide cubrir, sin hoja Roles: {sorted(nombres_cob)}")
 chk({x["nombre"] for x in c["por_entrar"]} >= {"Gisela", "Yesid"},
     f"Turnos 2 y 3 aún no entran (no se alerta): {sorted(x['nombre'] for x in c['por_entrar'])}")
 chk(all(x["motivo"].startswith("sin señal") for x in c["requieren_cobertura"]),
@@ -192,6 +221,24 @@ c4c = turnos.calcular_cobertura(h, JUEVES_MOSTRADOR)
 santiago_aus = [x for x in c4c["ausencia_informada"] if x["nombre"] == "Santiago"]
 chk(bool(santiago_aus) and santiago_aus[0].get("sede") is True,
     f"Jueves 10am: Santiago (Mostrador) -> ausencia informada con sede=True: {santiago_aus}")
+
+# =====================================================
+# Almuerzo automático (Miércoles 12:30pm, turno 1: 12:00-1:00pm)
+# =====================================================
+MIER_ALMUERZO = datetime(2026, 7, 29, 12, 30)
+c4d = turnos.calcular_cobertura(h, MIER_ALMUERZO)
+estefania_aus = [x for x in c4d["ausencia_informada"] if x["nombre"] == "Estefania"]
+chk(bool(estefania_aus) and estefania_aus[0].get("estado") == "almuerzo",
+    f"Miércoles 12:30 (ventana de almuerzo turno 1) -> Estefania en almuerzo automático: {estefania_aus}")
+chk("Estefania" not in {x["nombre"] for x in c4d["requieren_cobertura"]},
+    "Estefania en almuerzo automático NO dispara alarma roja")
+
+# Si ya marcó "Desconectado", el almuerzo automático NO se lo pisa.
+estados_desc = {turnos.clave("Estefania"): {"estado": "desconectado", "ts": time.time()}}
+c4e = turnos.calcular_cobertura(h, MIER_ALMUERZO, estados=estados_desc)
+estefania_desc = [x for x in c4e["ausencia_informada"] if x["nombre"] == "Estefania"]
+chk(bool(estefania_desc) and estefania_desc[0].get("estado") == "desconectado",
+    f"Con 'Desconectado' ya marcado, el almuerzo automático no lo reemplaza: {estefania_desc}")
 
 # Antes de la hora: 7:30am nadie del turno 1 debe alertar
 TEMPRANO = datetime(2026, 7, 27, 7, 30)

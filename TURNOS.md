@@ -131,11 +131,16 @@ Formato esperado:
   Si el rótulo trae horas con `am/pm`, esas manda; si son ambiguas (`2:00 a 9:00`)
   se usan los horarios de respaldo definidos en `core/turnos.py` → `TURNOS`.
 - Debajo de cada día, los **primeros nombres** de los asesores de ese turno.
+- **Soporte se marca con un `*` al final del nombre** (ej. `Cristian*`): no se
+  le pide cobertura a sí mismo, sin necesitar una hoja `Roles` aparte. El
+  asterisco no se muestra en el panel, solo se usa para identificarlo.
 - El título `Semana del ... al ...` **ya no hace falta escribirlo**: el panel
   calcula solo la semana en curso (corte el sábado a las 11pm).
-- Una **leyenda** con el texto del estado y **el color a su derecha**:
-  `Reparte Chats`, `Compensatorio`, `Ausencia`, `Cambio de Horario`, `Santafe`,
-  `Tesoro`, `Mostrador`.
+- Una fila **`Leyenda:`** que marca dónde termina el cuadro — todo lo que va
+  después (la leyenda, la tabla de almuerzo) se ignora al buscar turnos y
+  nombres. Debajo de esa fila, el texto del estado y **el color a su
+  derecha**: `Compensatorio`, `Ausencia`, `Cambio de Horario`, `CC Santafe`,
+  `CC Tesoro` (o los nombres cortos `Santafe`/`Tesoro`, siguen funcionando).
 
 Los **colores de las celdas** se leen igual que en la tabla de precios. Hay
 tres formas de "no cubrir chats" y el panel las trata distinto:
@@ -143,23 +148,33 @@ tres formas de "no cubrir chats" y el panel las trata distinto:
 | Estado | Significa | Dónde aparece |
 |---|---|---|
 | `Compensatorio`, `Ausencia`, `Cambio de Horario` | No trabaja ese día | "Hoy no se espera" (sin alarma, sin botón de cubrir) |
-| `Santafe`, `Tesoro`, `Mostrador` | Está trabajando, pero **presencial** en esa sede — sus chats quedan sin atender todo el turno | "Ausencia informada" (morado, con "Yo lo cubro"), igual que el traslado a zona presencial que reporta el propio asesor |
-| (celda blanca / sin color) | Normal, o `Reparte Chats` | Cobertura normal por presencia |
+| `CC Santafe`, `CC Tesoro` | Está trabajando, pero **presencial** en esa sede — sus chats quedan sin atender todo el turno | "Ausencia informada" (morado, con "Yo lo cubro"), igual que el traslado a zona presencial que reporta el propio asesor |
+| (celda blanca / sin color) | Normal | Cobertura normal por presencia |
 
 ### Hoja opcional `Roles`
 
-Dos columnas: `Nombre | Rol`. Sirve para que soporte **no aparezca cubriéndose a
-sí mismo** ni a la jefe. No se pide cobertura de quien tenga en su rol las
-palabras *soporte*, *jefe*, *coordin*, *web* o *página*. Si la hoja no existe,
-se asume que todos son cubribles (mejor avisar de más que dejar un chat solo).
+Dos columnas: `Nombre | Rol`. Es un mecanismo aparte del `*` (se **suman** los
+dos, no hace falta elegir uno) — útil si prefieres administrar los roles en un
+solo lugar en vez de tocar cada celda del cuadro. No se pide cobertura de quien
+tenga en su rol las palabras *soporte*, *jefe*, *coordin*, *web* o *página*.
+Si ninguno de los dos mecanismos aplica, se asume que la persona es cubrible
+(mejor avisar de más que dejar un chat solo).
+
+### Tabla de almuerzo (opcional)
+
+Debajo de la leyenda, una tabla `Almuerzo | Desde | Hasta` con una fila por
+turno (`1 Turno`, `2 Turno`, `3 Turno`) y sus horas. Si no está, se usa el
+respaldo por código (`core/turnos.py` → `ALMUERZOS`). Ver más abajo cómo se
+aplica automáticamente.
 
 ---
 
 ## Estados del asesor
 
-El asesor marca en el panel **"Estoy:"** — Disponible, En chat, Baño, Almuerzo,
-Capacitación, Reunión, Desconectado. Sirve para separar dos cosas que antes se
-confundían:
+El asesor marca en el panel **"Estoy:"** — En chat, Almuerzo, Capacitación,
+Reunión, Desconectado (se quitaron *Disponible*, que "En chat" ya cubre, y
+*Baño*, por ser tiempos demasiado breves para justificar un aviso). Sirve para
+separar dos cosas que antes se confundían:
 
 - **Requieren cobertura (rojo):** en turno y **sin ninguna explicación**. Esto
   es lo que de verdad hay que atender.
@@ -168,6 +183,21 @@ confundían:
 
 El contador rojo de la lengüeta cuenta **solo** los del primer grupo, para que
 una alerta signifique siempre lo mismo.
+
+### Almuerzo automático
+
+Dentro de la ventana de almuerzo de su turno (ver la tabla de la hoja, o el
+respaldo `ALMUERZOS` en el código), el asesor **queda marcado "Almuerzo"
+solo**, sin tener que seleccionarlo — aparece en "Ausencia informada" y no
+dispara alarma. Lo único que lo invalida es que ya haya marcado
+**"Desconectado"** explícitamente.
+
+### Desconectado automático al cerrar
+
+Si el asesor cierra la pestaña o el navegador, el panel marca **"Desconectado"**
+solo (vía `navigator.sendBeacon`, pensado para que la señal salga incluso
+mientras la página se está cerrando). Así no queda "en línea" fantasma después
+de que alguien se va.
 
 ## Apoyo a la zona presencial
 
@@ -201,10 +231,13 @@ a activar si regresa.
 
 ## "Yo lo cubro"
 
-En cada persona por cubrir hay un botón **Yo lo cubro**: quien lo pulsa queda
-registrado como cobertura activa y el resto ve *"cubre Mariana desde 2:15pm"*.
-Evita que dos personas de soporte entren a la misma cuenta y deja el rastro de
-quién cubrió qué (y por cuántos minutos).
+En cada persona por cubrir hay un botón **Yo lo cubro** — **solo visible para
+soporte** (quien eligió en "Soy:" un nombre marcado con `*` en la hoja, o con
+rol Soporte en la hoja `Roles`). Un asesor de redes ve quién está cubriendo,
+pero no el botón. Quien lo pulsa queda registrado como cobertura activa y el
+resto ve *"cubre Mariana desde 2:15pm"*. Evita que dos personas de soporte
+entren a la misma cuenta y deja el rastro de quién cubrió qué (y por cuántos
+minutos).
 
 ## Vista de gestión (jefa de ventas)
 

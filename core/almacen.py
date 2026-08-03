@@ -33,14 +33,12 @@ _iniciada = False
 
 # Estados que puede marcar el asesor. 'atiende' = está trabajando en chats.
 ESTADOS_ASESOR = {
-    "disponible": {"etiqueta": "Disponible", "atiende": True},
     "en_chat": {"etiqueta": "En chat", "atiende": True},
     # Cuando la zona presencial se llena (o falta una vendedora presencial), un
     # vendedor de chats pasa a atender allá. No es una ausencia: es un traslado
     # por prioridad de cliente presencial, y sus chats quedan sin atender, así
     # que soporte debe cubrirlos. Se mide aparte porque frena la operación.
     "presencial": {"etiqueta": "En zona presencial", "atiende": False},
-    "bano": {"etiqueta": "Baño", "atiende": False},
     "almuerzo": {"etiqueta": "Almuerzo", "atiende": False},
     "capacitacion": {"etiqueta": "Capacitación", "atiende": False},
     "reunion": {"etiqueta": "Reunión", "atiende": False},
