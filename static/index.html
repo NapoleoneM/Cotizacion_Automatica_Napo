@@ -40,10 +40,135 @@
     </div>
   </header>
 
+  <!-- ============ CALCULADORA — protagonista de la página ============
+       Empieza bloqueada/difuminada desde el HTML (no la desbloquea JS
+       después de una llamada de red) para que nunca se vea un destello de
+       la calculadora usable antes de identificarse — mismo criterio que la
+       pantalla de PIN. El panel de Turnos (más abajo en el HTML) queda fijo
+       a la derecha en pantallas anchas, igual que antes; en angostas se
+       apila debajo, para no taparle nunca el protagonismo a la calculadora. -->
+  <div class="app-principal bloqueado" id="app-principal">
+    <div class="app-bloqueo" id="app-bloqueo">
+      <p>🔒 Identifícate en el panel de Turnos (Soy: / Estoy:) para usar la calculadora.</p>
+    </div>
+
+  <nav class="tabs" id="tabs">
+    <button class="tab activa" data-vista="retail">Retail</button>
+    <button class="tab" data-vista="mayorista">Mayorista</button>
+    <button class="tab" data-vista="tienda">Valor Tienda</button>
+    <button class="tab" data-vista="tabla">Tabla de precios</button>
+  </nav>
+
+  <!-- ================= RETAIL ================= -->
+  <section class="vista activa" id="vista-retail">
+    <div class="tarjeta">
+      <div class="tarjeta-titulo">🗒️ Joyas a cotizar</div>
+      <div id="filas-retail" class="filas"></div>
+      <button class="btn-oro" id="add-retail">+ Agregar joya</button>
+    </div>
+
+    <div class="tarjeta opciones">
+      <div class="fila-opcion">
+        <label class="etq">🚚 Envío:</label>
+        <label class="chk"><input type="checkbox" id="ret-envio-chk"> Agregar envío</label>
+        <select id="ret-envio-tipo" disabled>
+          <option>Local (Medellín)</option>
+          <option>Local (Área Metropolitana)</option>
+          <option>Nacional</option>
+          <option>Internacional</option>
+        </select>
+        <input type="text" id="ret-envio-manual" class="dinero" placeholder="Valor envío intl." style="display:none">
+      </div>
+      <div class="fila-opcion">
+        <label class="etq">💳 Pago:</label>
+        <select id="ret-pago">
+          <option>Transferencia</option><option>Addi</option><option>Sistecredito</option>
+          <option>Contra Entrega</option><option>T. Crédito/Débito</option>
+        </select>
+      </div>
+    </div>
+
+    <button class="btn-accion" id="calc-retail">CALCULAR COTIZACIÓN</button>
+    <pre class="resultado editable" id="res-retail" contenteditable="true" spellcheck="false"></pre>
+    <button class="btn-copiar" data-target="res-retail">📄 Copiar mensaje para WhatsApp</button>
+  </section>
+
+  <!-- ================= MAYORISTA ================= -->
+  <section class="vista" id="vista-mayorista">
+    <div class="tarjeta estado-precios">
+      <span id="estado-precios" class="estado-txt">Cargando precios…</span>
+      <button class="btn-verde" id="actualizar-precios">Actualizar precios</button>
+    </div>
+    <div id="aviso-tarifas" class="aviso" style="display:none"></div>
+
+    <div class="tarjeta">
+      <div class="tarjeta-titulo">🗒️ Artículos a cotizar</div>
+      <div id="filas-mayorista" class="filas"></div>
+      <div id="filas-otros" class="filas"></div>
+      <div class="barra-add">
+        <button class="btn-oro" id="add-mayorista">+ Agregar joya</button>
+        <button class="btn-naranja" id="add-otro">+ Agregar otro artículo</button>
+        <span id="aviso-incompletas" class="aviso-inline"></span>
+      </div>
+    </div>
+
+    <div class="tarjeta opciones">
+      <div class="fila-opcion">
+        <label class="etq">🚚 Envío:</label>
+        <label class="chk"><input type="checkbox" id="may-envio-chk"> Agregar envío</label>
+        <select id="may-envio-tipo" disabled>
+          <option>Nacional</option><option>Internacional</option>
+        </select>
+        <input type="text" id="may-envio-manual" class="dinero" placeholder="Valor manual" style="display:none">
+      </div>
+    </div>
+
+    <button class="btn-accion" id="calc-mayorista">CALCULAR COTIZACIÓN MAYORISTA</button>
+    <pre class="resultado" id="res-mayorista"></pre>
+    <button class="btn-copiar" data-target="res-mayorista">📄 Copiar mensaje para WhatsApp</button>
+  </section>
+
+  <!-- ================= VALOR TIENDA ================= -->
+  <section class="vista" id="vista-tienda">
+    <div class="tarjeta estado-precios">
+      <span id="estado-tienda" class="estado-txt">Cargando precios…</span>
+      <button class="btn-verde" id="actualizar-tienda">Actualizar precios</button>
+    </div>
+
+    <div class="tarjeta opciones">
+      <div class="fila-opcion">
+        <label class="etq">Peso (gr):</label>
+        <input type="text" id="tienda-peso" class="peso" placeholder="Peso" inputmode="decimal">
+      </div>
+      <div class="fila-opcion">
+        <label class="etq">Tipo de material:</label>
+        <select id="tienda-calidad"><option value="">Cargando…</option></select>
+      </div>
+    </div>
+
+    <div class="tarjeta">
+      <div class="tarjeta-titulo">💲 Precio sugerido para tienda</div>
+      <pre class="resultado" id="res-tienda">Ingrese peso y tipo de material.</pre>
+      <div id="criterio-tienda" class="aviso" style="display:none"></div>
+    </div>
+  </section>
+
+  <!-- ================= TABLA DE PRECIOS ================= -->
+  <section class="vista" id="vista-tabla">
+    <div class="tarjeta estado-precios">
+      <span id="estado-tabla" class="estado-txt">La tabla se descarga al abrir esta pestaña.</span>
+      <button class="btn-verde" id="actualizar-tabla">Actualizar tabla</button>
+    </div>
+    <div class="marco-tabla">
+      <canvas id="canvas-tabla"></canvas>
+    </div>
+  </section>
+  </div><!-- /app-principal -->
+
   <!-- ============ TURNOS Y COBERTURA ============
-       Fijo arriba de la calculadora (ya no es un panel desplegable): toda
-       persona debe elegir "Soy:" y "Estoy:" aquí antes de poder usar el
-       resto del programa. -->
+       Fijo a la derecha en pantallas anchas (igual que antes); en angostas
+       se apila debajo de la calculadora en vez de taparla. Ya no es un
+       botón desplegable: su contenido queda siempre visible. -->
   <aside class="panel-turnos" id="panel-turnos">
     <div class="panel-cuerpo">
       <div class="panel-cab">
@@ -164,128 +289,6 @@
       <p class="panel-pie" id="panel-semana"></p>
     </div>
   </aside>
-
-  <!-- ============ CALCULADORA — bloqueada hasta identificarse arriba ============
-       Empieza bloqueada desde el HTML (no la desbloquea JS después de una
-       llamada de red) para que nunca se vea un destello de la calculadora
-       usable antes de identificarse — mismo criterio que la pantalla de PIN. -->
-  <div class="app-principal bloqueado" id="app-principal">
-    <div class="app-bloqueo" id="app-bloqueo">
-      <p>👆 Elige tu nombre y en qué estás (arriba) para usar la calculadora.</p>
-    </div>
-
-  <nav class="tabs" id="tabs">
-    <button class="tab activa" data-vista="retail">Retail</button>
-    <button class="tab" data-vista="mayorista">Mayorista</button>
-    <button class="tab" data-vista="tienda">Valor Tienda</button>
-    <button class="tab" data-vista="tabla">Tabla de precios</button>
-  </nav>
-
-  <!-- ================= RETAIL ================= -->
-  <section class="vista activa" id="vista-retail">
-    <div class="tarjeta">
-      <div class="tarjeta-titulo">🗒️ Joyas a cotizar</div>
-      <div id="filas-retail" class="filas"></div>
-      <button class="btn-oro" id="add-retail">+ Agregar joya</button>
-    </div>
-
-    <div class="tarjeta opciones">
-      <div class="fila-opcion">
-        <label class="etq">🚚 Envío:</label>
-        <label class="chk"><input type="checkbox" id="ret-envio-chk"> Agregar envío</label>
-        <select id="ret-envio-tipo" disabled>
-          <option>Local (Medellín)</option>
-          <option>Local (Área Metropolitana)</option>
-          <option>Nacional</option>
-          <option>Internacional</option>
-        </select>
-        <input type="text" id="ret-envio-manual" class="dinero" placeholder="Valor envío intl." style="display:none">
-      </div>
-      <div class="fila-opcion">
-        <label class="etq">💳 Pago:</label>
-        <select id="ret-pago">
-          <option>Transferencia</option><option>Addi</option><option>Sistecredito</option>
-          <option>Contra Entrega</option><option>T. Crédito/Débito</option>
-        </select>
-      </div>
-    </div>
-
-    <button class="btn-accion" id="calc-retail">CALCULAR COTIZACIÓN</button>
-    <pre class="resultado editable" id="res-retail" contenteditable="true" spellcheck="false"></pre>
-    <button class="btn-copiar" data-target="res-retail">📄 Copiar mensaje para WhatsApp</button>
-  </section>
-
-  <!-- ================= MAYORISTA ================= -->
-  <section class="vista" id="vista-mayorista">
-    <div class="tarjeta estado-precios">
-      <span id="estado-precios" class="estado-txt">Cargando precios…</span>
-      <button class="btn-verde" id="actualizar-precios">Actualizar precios</button>
-    </div>
-    <div id="aviso-tarifas" class="aviso" style="display:none"></div>
-
-    <div class="tarjeta">
-      <div class="tarjeta-titulo">🗒️ Artículos a cotizar</div>
-      <div id="filas-mayorista" class="filas"></div>
-      <div id="filas-otros" class="filas"></div>
-      <div class="barra-add">
-        <button class="btn-oro" id="add-mayorista">+ Agregar joya</button>
-        <button class="btn-naranja" id="add-otro">+ Agregar otro artículo</button>
-        <span id="aviso-incompletas" class="aviso-inline"></span>
-      </div>
-    </div>
-
-    <div class="tarjeta opciones">
-      <div class="fila-opcion">
-        <label class="etq">🚚 Envío:</label>
-        <label class="chk"><input type="checkbox" id="may-envio-chk"> Agregar envío</label>
-        <select id="may-envio-tipo" disabled>
-          <option>Nacional</option><option>Internacional</option>
-        </select>
-        <input type="text" id="may-envio-manual" class="dinero" placeholder="Valor manual" style="display:none">
-      </div>
-    </div>
-
-    <button class="btn-accion" id="calc-mayorista">CALCULAR COTIZACIÓN MAYORISTA</button>
-    <pre class="resultado" id="res-mayorista"></pre>
-    <button class="btn-copiar" data-target="res-mayorista">📄 Copiar mensaje para WhatsApp</button>
-  </section>
-
-  <!-- ================= VALOR TIENDA ================= -->
-  <section class="vista" id="vista-tienda">
-    <div class="tarjeta estado-precios">
-      <span id="estado-tienda" class="estado-txt">Cargando precios…</span>
-      <button class="btn-verde" id="actualizar-tienda">Actualizar precios</button>
-    </div>
-
-    <div class="tarjeta opciones">
-      <div class="fila-opcion">
-        <label class="etq">Peso (gr):</label>
-        <input type="text" id="tienda-peso" class="peso" placeholder="Peso" inputmode="decimal">
-      </div>
-      <div class="fila-opcion">
-        <label class="etq">Tipo de material:</label>
-        <select id="tienda-calidad"><option value="">Cargando…</option></select>
-      </div>
-    </div>
-
-    <div class="tarjeta">
-      <div class="tarjeta-titulo">💲 Precio sugerido para tienda</div>
-      <pre class="resultado" id="res-tienda">Ingrese peso y tipo de material.</pre>
-      <div id="criterio-tienda" class="aviso" style="display:none"></div>
-    </div>
-  </section>
-
-  <!-- ================= TABLA DE PRECIOS ================= -->
-  <section class="vista" id="vista-tabla">
-    <div class="tarjeta estado-precios">
-      <span id="estado-tabla" class="estado-txt">La tabla se descarga al abrir esta pestaña.</span>
-      <button class="btn-verde" id="actualizar-tabla">Actualizar tabla</button>
-    </div>
-    <div class="marco-tabla">
-      <canvas id="canvas-tabla"></canvas>
-    </div>
-  </section>
-  </div><!-- /app-principal -->
 
   <footer class="creditos" id="creditos" hidden>
     Desarrollado por

@@ -109,11 +109,20 @@ h1 { font-size: 22px; margin: 0; }
 #canvas-tabla { display: block; }
 
 /* ============ TURNOS Y COBERTURA ============
-   Ya no es un panel lateral desplegable: vive fijo arriba de la calculadora,
-   siempre visible, en el flujo normal de la página (no position:fixed). */
-.panel-turnos { font-size: 12px; margin-bottom: 10px; }
+   Ya no es un botón desplegable: el contenido siempre está visible. Mobile
+   first: por defecto se apila debajo de la calculadora (para no taparle el
+   protagonismo en pantallas angostas); desde 1300px de ancho hay margen de
+   sobra a los lados de la calculadora centrada (720px), así que vuelve a
+   quedar fija al borde derecho, igual que antes. */
+.panel-turnos { font-size: 12px; margin-top: 12px; }
 .panel-cuerpo {
   background: var(--card); border-radius: 8px; padding: 10px;
+}
+@media (min-width: 1300px) {
+  .panel-turnos {
+    position: fixed; top: 64px; right: 24px; width: 280px; margin-top: 0;
+  }
+  .panel-cuerpo { max-height: 82vh; overflow-y: auto; }
 }
 
 .panel-cab { display: flex; justify-content: space-between; align-items: baseline;
