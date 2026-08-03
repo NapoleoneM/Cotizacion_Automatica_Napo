@@ -482,6 +482,18 @@ let panelTimer = null, latidoTimer = null;
 
 function yoNombre() { return localStorage.getItem(YO_KEY) || ""; }
 
+// La calculadora queda bloqueada hasta que la persona elija "Soy:" y "Estoy:".
+// "Soy:" se recuerda entre sesiones (localStorage); "Estoy:" se vuelve a pedir
+// en cada carga fresca de la página, para que el estado reflejado sea el de
+// ahora, no el de la última vez que se abrió el navegador.
+let estoyConfirmado = false;
+function identificado() { return !!yoNombre() && estoyConfirmado; }
+function actualizarBloqueo() {
+  const ok = identificado();
+  $("#app-principal").classList.toggle("bloqueado", !ok);
+  $("#app-bloqueo").hidden = ok;
+}
+
 function el(tag, cls, txt) {
   const n = document.createElement(tag);
   if (cls) n.className = cls;
@@ -582,18 +594,14 @@ function renderPanel(d) {
   $("#n-aus").textContent = aus.length ? `(${aus.length})` : "";
   $("#n-linea").textContent = (d.en_linea || []).length ? `(${d.en_linea.length})` : "";
 
-  // Lengüeta: el contador cuenta solo lo verdaderamente sin explicación
-  const badge = $("#panel-badge");
-  badge.hidden = cob.length === 0;
-  badge.textContent = cob.length;
-  $("#panel-turnos").classList.toggle("alerta", cob.length > 0);
-
   // Estados posibles en el selector "Estoy:"
   const selEst = $("#mi-estado");
   if ((d.estados_posibles || []).length && selEst.options.length === 0) {
+    selEst.add(new Option("— elige tu estado —", ""));
     d.estados_posibles.forEach(e => selEst.add(new Option(e.etiqueta, e.clave)));
   }
   $("#fila-mi-estado").hidden = !yoNombre();
+  actualizarBloqueo();
 
   pintarLista($("#lista-cobertura"), cob, x => {
     const d2 = itemBase(x, "rojo");
@@ -917,25 +925,23 @@ function aplicarRol(rol) {
 }
 
 function iniciarPanelTurnos() {
-  $("#panel-toggle").onclick = () => {
-    const p = $("#panel-turnos");
-    p.classList.toggle("abierto");
-    if (p.classList.contains("abierto")) cargarTurnos();
-  };
-
   $("#panel-yo-sel").onchange = e => {
     const v = e.target.value;
     if (v) localStorage.setItem(YO_KEY, v); else localStorage.removeItem(YO_KEY);
     $("#nov-nombre").value = v;
     $("#fila-mi-estado").hidden = !v;
+    if (!v) estoyConfirmado = false;      // cambió de identidad: hay que reconfirmar "Estoy:"
+    actualizarBloqueo();
     enviarPresencia().then(cargarTurnos);
   };
 
   // "Estoy:" — el asesor dice en qué está, así soporte no lo confunde con una
-  // ausencia sin explicación.
+  // ausencia sin explicación. También es lo que desbloquea la calculadora.
   $("#mi-estado").onchange = async e => {
     const nombre = yoNombre();
-    if (!nombre) return;
+    if (!nombre || !e.target.value) return;
+    estoyConfirmado = true;
+    actualizarBloqueo();
     await fetch("/api/turnos/estado-asesor", {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ nombre, estado: e.target.value }),
