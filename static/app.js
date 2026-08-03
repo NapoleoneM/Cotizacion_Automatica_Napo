@@ -473,7 +473,10 @@ $("#gate-pin").addEventListener("keydown", e => { if (e.key === "Enter") enviarP
 // sepa quién está atendiendo) y muestra a quién hay que cubrir según la hora.
 // =====================================================
 const YO_KEY = "turnos_yo";
-const REFRESCO_PANEL_MS = 45000;   // cada cuánto se relee el estado
+// 8s: se siente "en vivo" sin necesitar websockets — lo que lee viene de la
+// base de datos local (novedades, presencia, equipo), no de Sheets, así que
+// no hay costo de cuota por refrescar seguido.
+const REFRESCO_PANEL_MS = 8000;
 const LATIDO_MS = 180000;          // cada cuánto se envía la señal de presencia
 let panelTimer = null, latidoTimer = null;
 
