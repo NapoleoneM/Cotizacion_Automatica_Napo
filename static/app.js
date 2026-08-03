@@ -487,7 +487,7 @@ function yoNombre() { return localStorage.getItem(YO_KEY) || ""; }
 // en cada carga fresca de la página, para que el estado reflejado sea el de
 // ahora, no el de la última vez que se abrió el navegador.
 let estoyConfirmado = false;
-function identificado() { return !!yoNombre() && estoyConfirmado; }
+function identificado() { return esJefa || (!!yoNombre() && estoyConfirmado); }
 function actualizarBloqueo() {
   const ok = identificado();
   $("#app-principal").classList.toggle("bloqueado", !ok);
@@ -922,6 +922,7 @@ function aplicarRol(rol) {
   $("#sec-gestion").hidden = !esJefa;
   $("#sec-equipo").hidden = !esJefa;
   if (esJefa) { cargarGestion(); cargarEquipo(); }
+  actualizarBloqueo();   // la jefa no necesita Soy:/Estoy: para usar la calculadora
 }
 
 function iniciarPanelTurnos() {

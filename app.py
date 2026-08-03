@@ -537,8 +537,17 @@ def api_turnos_estado():
         coberturas=almacen.coberturas_activas(),
         ajustes=almacen.ajustes_del_dia(),
     )
-    datos.update(base, configurado=True, personas=personas_del_horario(horario),
-                 fuente=horario.get("fuente", ""), roles=horario.get("roles", {}))
+    # El equipo registrado en la app (panel de Gestión) se suma al selector
+    # "Soy:" aunque la hoja de Sheets sea la fuente activa del horario — así
+    # se puede dar de alta a alguien (ej. una cuenta de pruebas) sin tocar la
+    # hoja real de la jefa. Al no estar en las asignaciones del horario, no
+    # entra en ninguna lista de cobertura: no interfiere con los asesores.
+    equipo = almacen.equipo()
+    personas = sorted(set(personas_del_horario(horario)) | {p["nombre"] for p in equipo})
+    roles = {p["clave"]: p["rol"] for p in equipo}
+    roles.update(horario.get("roles") or {})
+    datos.update(base, configurado=True, personas=personas,
+                 fuente=horario.get("fuente", ""), roles=roles)
     return datos
 
 
