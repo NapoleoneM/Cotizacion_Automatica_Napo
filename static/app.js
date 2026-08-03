@@ -670,14 +670,17 @@ function renderPanel(d) {
 
   pintarLista($("#lista-nospera"), d.no_se_espera, x => itemBase(x, ""));
 
-  // Selectores de personas (conservando lo ya elegido)
+  // Selectores de personas (conservando lo ya elegido). Se compara la lista
+  // completa (no solo la cantidad) para no perder altas/bajas cuando el total
+  // coincide por casualidad con el de antes.
   const personas = d.personas || [];
+  const firmaPersonas = personas.join("|");
   [["#panel-yo-sel", yoNombre(), "— elige tu nombre —"],
    ["#nov-nombre", $("#nov-nombre").value || yoNombre(), "— ¿de quién? —"],
    ["#aj-nombre", $("#aj-nombre").value, "— ¿a quién? —"]
   ].forEach(([sel, valor, ph]) => {
     const s = $(sel);
-    if (s.dataset.n === String(personas.length) && s.options.length > 1) {
+    if (s.dataset.firma === firmaPersonas && s.options.length > 1) {
       s.value = valor || "";
       return;
     }
@@ -685,7 +688,7 @@ function renderPanel(d) {
     s.add(new Option(ph, ""));
     personas.forEach(p => s.add(new Option(p, p)));
     s.value = valor || "";
-    s.dataset.n = String(personas.length);
+    s.dataset.firma = firmaPersonas;
   });
 }
 
