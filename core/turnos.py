@@ -81,6 +81,11 @@ ALMUERZOS = {
 TOLERANCIA_MIN = 15
 UMBRAL_INACTIVO_MIN = 30
 
+# Una reclamación de "Yo lo cubro" protege de la alarma roja solo por este
+# tiempo — pasado, si la persona sigue sin señal, vuelve a "Requieren
+# cobertura" (hay que confirmar la cobertura de nuevo, no vale una sola vez).
+VENCIMIENTO_COBERTURA_MIN = 90
+
 # Roles que NO requieren cobertura de soporte (soporte cubre a los de redes).
 # Ojo con "jefa" y "jefe": el rol real es "Jefa de ventas", así que hay que
 # contemplar las dos formas o la jefatura acabaría en la lista de cobertura.
@@ -435,10 +440,17 @@ def calcular_cobertura(horario, ahora, presencia=None, estados=None,
     hora actual. Función pura: no toca red ni disco, se prueba con cualquier hora.
 
     Listas que ve soporte:
-      - requieren_cobertura: en turno y SIN explicación → alarma roja
-      - ausencia_informada:  en turno pero con estado (almuerzo…) o novedad
-      - en_linea:            atendiendo, con señal reciente
-      - por_entrar:          su turno aún no empieza (no se alerta)
+      - requieren_cobertura: sin señal y SIN cobertura vigente → alarma roja.
+        Aplica en los tres momentos en que puede faltar alguien: antes de
+        entrar (pasada la tolerancia), en turno, y después de que su turno
+        terminó (hasta el cierre del día).
+      - ausencia_informada:  en turno con estado (almuerzo…) o novedad; O
+        cualquiera de los tres momentos de arriba pero YA con "Yo lo cubro"
+        vigente (< VENCIMIENTO_COBERTURA_MIN). Si la cobertura vence y sigue
+        sin señal, vuelve a "Requieren cobertura".
+      - en_linea:            atendiendo (o quedándose ayudando), señal reciente
+      - por_entrar:          aún dentro de la tolerancia — nunca es urgente,
+        se puede cubrir de forma preventiva pero no expira ni alarma
       - no_se_espera:        compensatorio / ausencia / cambio de horario
     """
     presencia = presencia or {}
@@ -500,22 +512,23 @@ def calcular_cobertura(horario, ahora, presencia=None, estados=None,
         if not info["cubrir"]:
             res["no_se_espera"].append(item)
             continue
+
+        # Aún no entra: antes de que se cumpla la tolerancia nunca es urgente
+        # (se puede cubrir de forma preventiva con el botón, pero no exige
+        # nada todavía — por eso no importa si la cobertura está vencida acá).
         if ahora_h < ini + TOLERANCIA_MIN / 60.0:
             res["por_entrar"].append(item)
             continue
-        if ahora_h > fin:
-            # Su turno terminó, pero el día de trabajo sigue: se muestra hasta
-            # el cierre para confirmar que alguien tomó sus chats. Pasado el
-            # cierre, ya no se rastrea (el tiempo nocturno no cuenta).
-            if ahora_h <= cierre_dia and _rol_cubrible(rol):
-                item["estado_etq"] = f"Turno terminó a las {item['hasta']}"
-                item["turno_terminado"] = True
-                res["ausencia_informada"].append(item)
+
+        # Cierre del día: de acá al turno 1 de mañana no se rastrea nada.
+        if ahora_h > cierre_dia:
             continue
+
+        dentro_turno = ahora_h <= fin  # False = su turno ya terminó, pero el día sigue
 
         # Sede presencial: plan conocido de antemano, no depende de señal ni
         # de novedad — sus chats están sin atender todo el turno.
-        if info.get("sede"):
+        if dentro_turno and info.get("sede"):
             if _rol_cubrible(rol):
                 item["estado"] = a["estado"]
                 item["estado_etq"] = info["etiqueta"]
@@ -533,25 +546,26 @@ def calcular_cobertura(horario, ahora, presencia=None, estados=None,
         est = estados.get(k)
         nov = nov_por_clave.get(k)
 
-        # Almuerzo automático: dentro de la ventana de su turno se marca
-        # solo, sin que el asesor tenga que seleccionarlo — el único que lo
-        # invalida es haber marcado "Desconectado" explícitamente.
-        alm_ini, alm_fin = (horario.get("almuerzos", {}).get(a["turno"])
-                            or ALMUERZOS.get(a["turno"], (None, None)))
-        desconectado = bool(est and est["estado"] == "desconectado")
-        if alm_ini is not None and alm_ini <= ahora_h < alm_fin and not desconectado:
-            est = {"estado": "almuerzo", "ts": _ts_hoy(ahora, alm_ini)}
+        if dentro_turno:
+            # Almuerzo automático: dentro de la ventana de su turno se marca
+            # solo, sin que el asesor tenga que seleccionarlo — lo único que
+            # lo invalida es haber marcado "Desconectado" explícitamente.
+            alm_ini, alm_fin = (horario.get("almuerzos", {}).get(a["turno"])
+                                or ALMUERZOS.get(a["turno"], (None, None)))
+            desconectado = bool(est and est["estado"] == "desconectado")
+            if alm_ini is not None and alm_ini <= ahora_h < alm_fin and not desconectado:
+                est = {"estado": "almuerzo", "ts": _ts_hoy(ahora, alm_ini)}
 
-        # 1) Estado explícito que dice que no está atendiendo → ausencia informada
-        if est and not ESTADOS_ASESOR.get(est["estado"], {}).get("atiende", True):
-            item["estado"] = est["estado"]
-            item["estado_etq"] = ESTADOS_ASESOR[est["estado"]]["etiqueta"]
-            item["desde_estado"] = datetime.fromtimestamp(est["ts"]).strftime("%I:%M %p")
-            if est["estado"] == ESTADO_PRESENCIAL:
-                item["sede"] = True
-            if _rol_cubrible(rol):
-                res["ausencia_informada"].append(item)
-            continue
+            # 1) Estado explícito que dice que no está atendiendo → ausencia informada
+            if est and not ESTADOS_ASESOR.get(est["estado"], {}).get("atiende", True):
+                item["estado"] = est["estado"]
+                item["estado_etq"] = ESTADOS_ASESOR[est["estado"]]["etiqueta"]
+                item["desde_estado"] = datetime.fromtimestamp(est["ts"]).strftime("%I:%M %p")
+                if est["estado"] == ESTADO_PRESENCIAL:
+                    item["sede"] = True
+                if _rol_cubrible(rol):
+                    res["ausencia_informada"].append(item)
+                continue
 
         # 2) Novedad reportada (ausencia, llegada tarde…) → ausencia informada
         if nov and (mins is None or mins > UMBRAL_INACTIVO_MIN):
@@ -563,7 +577,7 @@ def calcular_cobertura(horario, ahora, presencia=None, estados=None,
                 res["ausencia_informada"].append(item)
             continue
 
-        # 3) Señal reciente → está trabajando
+        # 3) Señal reciente → está trabajando (o se quedó ayudando tras su turno)
         if mins is not None and mins <= UMBRAL_INACTIVO_MIN:
             if est:
                 item["estado"] = est["estado"]
@@ -571,12 +585,29 @@ def calcular_cobertura(horario, ahora, presencia=None, estados=None,
             res["en_linea"].append(item)
             continue
 
-        # 4) Sin explicación → alarma roja
+        # 4) Sin señal, sin explicación: necesita que alguien confirme la
+        # cobertura. Si ya hay una reclamada y vigente (< 90 min desde "Yo lo
+        # cubro"), se muestra sin alarma; si nunca la hubo, o ya venció,
+        # queda (o vuelve a quedar) en "Requieren cobertura".
         if not _rol_cubrible(rol):
             continue                                # soporte/jefe/web: no se cubre
-        item["motivo"] = ("sin señal desde el inicio del turno" if mins is None
-                          else f"sin actividad hace {int(mins)} min")
-        res["requieren_cobertura"].append(item)
+
+        if not dentro_turno:
+            item["turno_terminado"] = True
+            motivo = f"su turno terminó a las {item['hasta']} y nadie confirmó cobertura"
+        else:
+            motivo = ("sin señal desde el inicio del turno" if mins is None
+                      else f"sin actividad hace {int(mins)} min")
+
+        vigente = bool(cob) and (time.time() - cob["desde"]) / 60.0 <= VENCIMIENTO_COBERTURA_MIN
+        if vigente:
+            item["estado_etq"] = motivo.capitalize()
+            res["ausencia_informada"].append(item)
+        else:
+            item["cubierto_por"] = None    # si había una reclamación, ya venció: se pide de nuevo
+            item["cubierto_desde"] = None
+            item["motivo"] = motivo
+            res["requieren_cobertura"].append(item)
 
     res["requieren_cobertura"].sort(key=lambda x: (bool(x.get("cubierto_por")), x["turno"], x["nombre"]))
     res["ausencia_informada"].sort(key=lambda x: (bool(x.get("cubierto_por")), x["nombre"]))

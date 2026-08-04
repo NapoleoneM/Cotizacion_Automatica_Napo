@@ -192,15 +192,32 @@ solo**, sin tener que seleccionarlo — aparece en "Ausencia informada" y no
 dispara alarma. Lo único que lo invalida es que ya haya marcado
 **"Desconectado"** explícitamente.
 
-### Cobertura hasta el cierre del día
+### Cobertura hasta el cierre del día, y "Yo lo cubro" que vence
 
-Cuando termina el turno de alguien, no desaparece del panel de inmediato:
-sigue en **"Ausencia informada"** (azul, con "Yo lo cubro") hasta la **hora de
-cierre del día** — la más tardía entre los 3 turnos, normalmente el fin del
-turno 3 (9pm). Es para confirmar que alguien tomó sus chats, no solo asumir
-que el solapamiento de horarios con el siguiente turno ya lo resuelve. Pasado
-el cierre, ya no se rastrea — el tiempo nocturno (cierre a la apertura del
-turno 1 del día siguiente) no cuenta.
+"Requieren cobertura" (rojo) no es solo "en turno, sin explicación": aplica en
+**tres momentos** en que puede faltar alguien —
+
+1. Antes de entrar (pasados los 15 min de gracia, sin señal) — de siempre.
+2. En turno, sin explicación — de siempre.
+3. **Después de que su turno terminó**, hasta la **hora de cierre del día**
+   (la más tardía entre los 3 turnos, normalmente el fin del turno 3, 9pm).
+   No basta con asumir que el solapamiento con el siguiente turno ya lo
+   resuelve: si nadie confirma, queda en rojo igual. Pasado el cierre, ya no
+   se rastrea — el tiempo nocturno no cuenta.
+
+Cuando soporte presiona **"Yo lo cubro"** en cualquiera de esos tres casos, la
+persona **sale del rojo** y pasa a mostrarse en la sección que explica el
+porqué ("Aún no entran" si aún no había empezado, "Ausencia informada" en los
+otros dos) con "cubre [soporte] desde [hora]". Pero esa cobertura **vence a
+los 90 minutos**: si para entonces sigue sin señal, **vuelve al rojo** — hay
+que confirmarla de nuevo, no vale con reclamarla una sola vez. Si en cualquier
+momento la persona sí se conecta, pasa a "En línea" y nunca aparece en rojo,
+sin importar coberturas ni horarios.
+
+La única excepción es **"Aún no entran"**: ahí el botón "Yo lo cubro" es solo
+para adelantarse (si soporte ya sabe que alguien va a cubrir a quien está por
+entrar), pero nunca fuerza nada a rojo ni vence — antes de que se cumpla la
+tolerancia, nunca es urgente.
 
 ### Desconectado automático al cerrar
 

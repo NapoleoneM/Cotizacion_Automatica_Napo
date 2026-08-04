@@ -605,7 +605,10 @@ function renderPanel(d) {
 
   pintarLista($("#lista-cobertura"), cob, x => {
     const d2 = itemBase(x, "rojo");
-    d2.append(el("span", "det", `su turno empezó ${x.desde} · ${x.motivo}`));
+    // El motivo de "turno terminado" ya es una frase completa; no repetir
+    // la hora de entrada delante (quedaría "empezó 8am · terminó a las 4pm").
+    const det = x.turno_terminado ? x.motivo : `su turno empezó ${x.desde} · ${x.motivo}`;
+    d2.append(el("span", "det", det));
     d2.append(botonCubrir(x));
     return d2;
   });
