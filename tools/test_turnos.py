@@ -256,6 +256,27 @@ chk(bool(c7["requieren_cobertura"]), "8:20am -> pasada la tolerancia, ya alerta"
 c8 = turnos.calcular_cobertura(h, datetime(2026, 7, 27, 23, 0))
 chk(not c8["requieren_cobertura"], "11:00pm -> nadie en turno, sin alertas")
 
+# =====================================================
+# Turno terminado: sigue visible (amarillo, con "Yo lo cubro") hasta el
+# cierre del día (fin del turno 3, 9pm); después de eso ya no se rastrea.
+# =====================================================
+LUNES_5PM = datetime(2026, 7, 27, 17, 0)  # Estefania (T1, 8am-4pm) ya terminó
+c10 = turnos.calcular_cobertura(h, LUNES_5PM)
+est_term = [x for x in c10["ausencia_informada"] if x["nombre"] == "Estefania"]
+chk(bool(est_term) and est_term[0].get("turno_terminado") is True,
+    f"5pm: Estefania (T1 terminó a las 4pm) sigue visible como ausencia informada: {est_term}")
+chk("Estefania" not in {x["nombre"] for x in c10["requieren_cobertura"]},
+    "Turno terminado NO dispara alarma roja")
+chk("Estefania" not in {x["nombre"] for x in c10["no_se_espera"]},
+    "Turno terminado NO cae en 'no se espera'")
+
+LUNES_10PM = datetime(2026, 7, 27, 22, 0)  # pasado el cierre del día (9pm)
+c11 = turnos.calcular_cobertura(h, LUNES_10PM)
+en_alguna = any(x.get("nombre") == "Estefania"
+                for k in ("requieren_cobertura", "ausencia_informada", "en_linea", "por_entrar", "no_se_espera")
+                for x in c11.get(k, []))
+chk(not en_alguna, "10pm (pasado el cierre) -> Estefania ya no aparece en ninguna lista")
+
 # Roles: soporte y jefe no se cubren
 h_roles = dict(h)
 h_roles["roles"] = {"estefania": "Soporte", "ximena": "Red social"}

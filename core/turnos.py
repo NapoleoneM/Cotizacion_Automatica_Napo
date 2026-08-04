@@ -452,6 +452,14 @@ def calcular_cobertura(horario, ahora, presencia=None, estados=None,
     clave_dia = "sem" if dia_idx <= 4 else ("sab" if dia_idx == 5 else "dom")
     ahora_h = ahora.hour + ahora.minute / 60.0
 
+    # Hora de cierre del día = la más tardía entre los 3 turnos (normalmente
+    # el fin del turno 3). Entre el fin del turno propio de alguien y el
+    # cierre, sigue apareciendo (como ausencia informada, con "Yo lo cubro")
+    # para que quede confirmado que alguien más se hizo cargo de sus chats —
+    # de cierre a la apertura del día siguiente no se rastrea nada.
+    _turnos_hoy = {**TURNOS, **(horario.get("turnos") or {})}
+    cierre_dia = max(v.get(clave_dia, v.get("sem", (0.0, 0.0)))[1] for v in _turnos_hoy.values())
+
     res = {"requieren_cobertura": [], "ausencia_informada": [], "en_linea": [],
            "por_entrar": [], "no_se_espera": [], "novedades": novedades,
            "ajustes": sorted(ajustes.values(), key=lambda x: x.get("ts", 0)),
@@ -496,7 +504,14 @@ def calcular_cobertura(horario, ahora, presencia=None, estados=None,
             res["por_entrar"].append(item)
             continue
         if ahora_h > fin:
-            continue                                # jornada terminada
+            # Su turno terminó, pero el día de trabajo sigue: se muestra hasta
+            # el cierre para confirmar que alguien tomó sus chats. Pasado el
+            # cierre, ya no se rastrea (el tiempo nocturno no cuenta).
+            if ahora_h <= cierre_dia and _rol_cubrible(rol):
+                item["estado_etq"] = f"Turno terminó a las {item['hasta']}"
+                item["turno_terminado"] = True
+                res["ausencia_informada"].append(item)
+            continue
 
         # Sede presencial: plan conocido de antemano, no depende de señal ni
         # de novedad — sus chats están sin atender todo el turno.

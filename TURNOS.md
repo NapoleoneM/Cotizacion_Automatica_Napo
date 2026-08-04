@@ -192,6 +192,16 @@ solo**, sin tener que seleccionarlo — aparece en "Ausencia informada" y no
 dispara alarma. Lo único que lo invalida es que ya haya marcado
 **"Desconectado"** explícitamente.
 
+### Cobertura hasta el cierre del día
+
+Cuando termina el turno de alguien, no desaparece del panel de inmediato:
+sigue en **"Ausencia informada"** (azul, con "Yo lo cubro") hasta la **hora de
+cierre del día** — la más tardía entre los 3 turnos, normalmente el fin del
+turno 3 (9pm). Es para confirmar que alguien tomó sus chats, no solo asumir
+que el solapamiento de horarios con el siguiente turno ya lo resuelve. Pasado
+el cierre, ya no se rastrea — el tiempo nocturno (cierre a la apertura del
+turno 1 del día siguiente) no cuenta.
+
 ### Desconectado automático al cerrar
 
 Si el asesor cierra la pestaña o el navegador, el panel marca **"Desconectado"**

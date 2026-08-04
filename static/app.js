@@ -614,7 +614,7 @@ function renderPanel(d) {
     // Sede presencial (zona presencial, Santa Fe, El Tesoro, Mostrador…): la
     // persona está trabajando, pero sus chats quedaron sin atender por
     // prioridad de cliente presencial — se resalta distinto de una ausencia.
-    const d2 = itemBase(x, x.sede ? "morado" : "amarillo");
+    const d2 = itemBase(x, x.sede ? "morado" : x.turno_terminado ? "azul" : "amarillo");
     let det = x.estado_etq
       ? `${x.estado_etq}${x.desde_estado ? " desde " + x.desde_estado : ` · turno ${x.desde}-${x.hasta}`}`
       : "";
