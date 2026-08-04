@@ -688,6 +688,7 @@ function renderPanel(d) {
   pintarLista($("#lista-porentrar"), d.por_entrar, x => {
     const d2 = itemBase(x, "");
     d2.append(el("span", "det", `entra ${x.desde}`));
+    d2.append(botonCubrir(x));   // soporte puede adelantarse, sin esperar la alarma
     return d2;
   });
 
