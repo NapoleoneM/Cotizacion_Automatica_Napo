@@ -602,7 +602,13 @@ def calcular_cobertura(horario, ahora, presencia=None, estados=None,
         vigente = bool(cob) and (time.time() - cob["desde"]) / 60.0 <= VENCIMIENTO_COBERTURA_MIN
         if vigente:
             item["estado_etq"] = motivo.capitalize()
-            res["ausencia_informada"].append(item)
+            # Turno terminado y ya cubierto: menos ruido en "Ausencia informada"
+            # — se ve en "Hoy no se espera" mientras la cobertura esté vigente.
+            # Si vence sin señal, vuelve a "Requieren cobertura" igual que siempre.
+            if not dentro_turno:
+                res["no_se_espera"].append(item)
+            else:
+                res["ausencia_informada"].append(item)
         else:
             item["cubierto_por"] = None    # si había una reclamación, ya venció: se pide de nuevo
             item["cubierto_desde"] = None

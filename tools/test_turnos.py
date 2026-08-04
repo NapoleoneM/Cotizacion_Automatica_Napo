@@ -272,11 +272,13 @@ chk("Estefania" not in {x["nombre"] for x in c10["ausencia_informada"]},
 cob_fresca = {turnos.clave("Estefania"): {"soporte": "Cristian", "desde": time.time() - 10 * 60,
                                            "desde_hora": "4:50 PM"}}
 c10b = turnos.calcular_cobertura(h, LUNES_5PM, coberturas=cob_fresca)
-est_cub = [x for x in c10b["ausencia_informada"] if x["nombre"] == "Estefania"]
+est_cub = [x for x in c10b["no_se_espera"] if x["nombre"] == "Estefania"]
 chk(bool(est_cub) and est_cub[0].get("cubierto_por") == "Cristian",
-    f"5pm con 'Yo lo cubro' de hace 10 min: pasa a ausencia informada: {est_cub}")
+    f"5pm con 'Yo lo cubro' de hace 10 min: pasa a 'Hoy no se espera' (menos ruido): {est_cub}")
 chk("Estefania" not in {x["nombre"] for x in c10b["requieren_cobertura"]},
     "Con cobertura vigente, ya no está en Requieren cobertura")
+chk("Estefania" not in {x["nombre"] for x in c10b["ausencia_informada"]},
+    "Turno terminado + cubierto ya NO va en 'Ausencia informada' (se movió a 'Hoy no se espera')")
 
 cob_vencida = {turnos.clave("Estefania"): {"soporte": "Cristian", "desde": time.time() - 95 * 60,
                                             "desde_hora": "3:25 PM"}}

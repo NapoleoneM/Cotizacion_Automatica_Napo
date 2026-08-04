@@ -695,7 +695,15 @@ function renderPanel(d) {
     return d2;
   });
 
-  pintarLista($("#lista-nospera"), d.no_se_espera, x => itemBase(x, ""));
+  pintarLista($("#lista-nospera"), d.no_se_espera, x => {
+    const d2 = itemBase(x, "");
+    // Compensatorio/Ausencia/Cambio de horario no llevan nada más — solo el
+    // caso de "turno terminado y ya cubierto" trae esta info adicional.
+    if (x.cubierto_por) {
+      d2.append(el("span", "det", `${x.estado_etq || "Turno terminado"} · cubre ${x.cubierto_por} desde ${x.cubierto_desde || ""}`));
+    }
+    return d2;
+  });
 
   // Selectores de personas (conservando lo ya elegido). Se compara la lista
   // completa (no solo la cantidad) para no perder altas/bajas cuando el total

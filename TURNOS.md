@@ -22,7 +22,9 @@ navegador). Es una herramienta de coordinación, no de control de acceso.
    - **Novedades de hoy** — ausencias/permisos reportados, con hora y nota.
    - **En línea** — con actividad reciente.
    - **Aún no entran** — su turno todavía no comienza (no se alerta).
-   - **Hoy no se espera** — compensatorio, ausencia o cambio de horario.
+   - **Hoy no se espera** — compensatorio, ausencia o cambio de horario; y
+     quien terminó su turno y ya tiene cobertura vigente (menos ruido que
+     "Ausencia informada" para un caso ya resuelto).
 
 La lengüeta del borde derecho se pone **roja con un contador** cuando hay gente
 por cubrir, así soporte lo nota sin abrir el panel.
@@ -207,12 +209,18 @@ dispara alarma. Lo único que lo invalida es que ya haya marcado
 
 Cuando soporte presiona **"Yo lo cubro"** en cualquiera de esos tres casos, la
 persona **sale del rojo** y pasa a mostrarse en la sección que explica el
-porqué ("Aún no entran" si aún no había empezado, "Ausencia informada" en los
-otros dos) con "cubre [soporte] desde [hora]". Pero esa cobertura **vence a
-los 90 minutos**: si para entonces sigue sin señal, **vuelve al rojo** — hay
-que confirmarla de nuevo, no vale con reclamarla una sola vez. Si en cualquier
-momento la persona sí se conecta, pasa a "En línea" y nunca aparece en rojo,
-sin importar coberturas ni horarios.
+porqué, con "cubre [soporte] desde [hora]":
+- **Antes de entrar** → "Aún no entran".
+- **En turno, sin explicación** → "Ausencia informada".
+- **Turno ya terminado** → **"Hoy no se espera"** (no "Ausencia informada" —
+  para no mezclar "cubierto y resuelto por hoy" con las ausencias del día que
+  sí necesitan seguimiento activo).
+
+Pero esa cobertura **vence a los 90 minutos**: si para entonces sigue sin
+señal, **vuelve al rojo** — hay que confirmarla de nuevo, no vale con
+reclamarla una sola vez. Si en cualquier momento la persona sí se conecta,
+pasa a "En línea" y nunca aparece en rojo, sin importar coberturas ni
+horarios.
 
 La única excepción es **"Aún no entran"**: ahí el botón "Yo lo cubro" es solo
 para adelantarse (si soporte ya sabe que alguien va a cubrir a quien está por
