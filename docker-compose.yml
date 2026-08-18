@@ -26,6 +26,10 @@ services:
       # Token del puente que consume la Torre de Control. Opcional: sin él, el
       # endpoint /api/torre/historial responde 503.
       - TORRE_TOKEN=${TORRE_TOKEN:-}
+      # Nombre de la pestaña del horario en Sheets. Opcional: sin ella, usa
+      # "Horarios" por defecto (nombre original antes de que la jefa la
+      # renombrara a "Chatcenter Horarios").
+      - TURNOS_HOJA=${TURNOS_HOJA:-Horarios}
       - PIN_COOKIE_SECURE=1
     labels:
       - "traefik.enable=true"
