@@ -328,5 +328,46 @@ p = turnos.personas_del_horario(h)
 chk("Estefania" in p and "Juliana" in p and len(p) == len(set(p)),
     f"Lista de personas sin duplicados ({len(p)}): {p}")
 
+# =====================================================
+# Cuadro SIN el rótulo "Leyenda:" (la jefa la reacomodó al lado del turno 1,
+# como pasó en producción) — el límite debe caer solo en "Almuerzo".
+# =====================================================
+FILAS_SIN_LEYENDA = [
+    fila(cel(), cel(), cel("Semana del 17 al 23 de Agosto de 2026")),
+    fila(cel(), cel(), cel("Lunes 17"), cel("Martes 18"), cel("Miercoles 19"),
+         cel("Jueves 20"), cel("Viernes 21"), cel("Sabado 22"), cel("Domingo 23"),
+         cel(), cel(), cel("Compensatorio"), cel("", AZUL)),
+    fila(cel(), cel("1 Turno 8:00am a 4:00pm, Sábado 8:00am a 3:00pm"), cel(),
+         cel("Gisela"), cel("Gisela"), cel("Gisela"), cel("Gisela"), cel("Gisela"), cel("Gisela"),
+         cel(), cel(), cel("CC Tesoro"), cel("", VERDE)),
+    fila(cel(), cel(), cel(), cel("Jennifer"), cel("Jennifer"), cel("Jennifer"),
+         cel("Jennifer"), cel("Jennifer"), cel("Elvia*"),
+         cel(), cel(), cel("Soporte"), cel("*")),
+    fila(),
+    fila(cel(), cel("2 Turno 11:00am a 7:00pm, Sábado 10:00am a 5:00pm"),
+         cel("Estefania"), cel("Estefania"), cel("Estefania"), cel("Estefania"),
+         cel("Estefania"), cel("Estefania")),
+    fila(),
+    fila(cel(), cel("3 Turno 2:00pm a 9:00pm, Sábado 11:00am a 6:00pm"), cel(),
+         cel("Cristian*"), cel("Cristian*"), cel("Cristian*"), cel("Cristian*"), cel("Cristian*")),
+    fila(),
+    # Sin fila "Leyenda:" en ningún lado — solo la tabla de Almuerzo marca el límite.
+    fila(cel(), cel("Almuerzo"), cel("Desde"), cel("Hasta")),
+    fila(cel(), cel("1 Turno"), cel("12:00 pm"), cel("1:00 pm")),
+    fila(cel(), cel("2 Turno"), cel("1:00 pm"), cel("2:00 pm")),
+    fila(cel(), cel("3 Turno"), cel("6:00 pm"), cel("6:20 pm")),
+]
+META_SIN_LEYENDA = {"sheets": [{"data": [{"rowData": FILAS_SIN_LEYENDA}]}]}
+h_sl = turnos.parsear_horario(META_SIN_LEYENDA)
+chk("error" not in h_sl, f"Sin 'Leyenda:' (solo Almuerzo como límite): parsea sin error ({h_sl.get('error', '')})")
+nombres_sl = {a["nombre"] for a in h_sl.get("asignaciones", [])}
+basura_sl = {"12:00 pm", "1:00 pm", "2:00 pm", "6:00 pm", "6:20 pm", "Almuerzo", "Desde", "Hasta"}
+chk(not (nombres_sl & basura_sl),
+    f"La tabla de Almuerzo no contamina aunque falte 'Leyenda:': {nombres_sl & basura_sl}")
+chk(h_sl.get("roles", {}).get("elvia") == "Soporte" and h_sl.get("roles", {}).get("cristian") == "Soporte",
+    f"Roles por '*' detectados igual, con la leyenda al lado del turno 1: {h_sl.get('roles')}")
+chk("cc tesoro" in h_sl.get("estados_leyenda", []),
+    f"Leyenda detectada aunque esté junto al turno 1, no debajo: {h_sl.get('estados_leyenda')}")
+
 print("\nRESULTADO:", "[X] HAY FALLOS" if fallos else "[OK] TODO CORRECTO")
 sys.exit(1 if fallos else 0)

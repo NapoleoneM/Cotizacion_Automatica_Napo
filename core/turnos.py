@@ -236,9 +236,14 @@ def parsear_horario(meta, gid=None):
     # nota posterior NO son turnos ni personas — sin este corte, "1 Turno"
     # dentro de la tabla de almuerzo se leía como otro bloque de turno más,
     # y sus horas ("12:00 pm") como si fueran el nombre de un asesor.
+    # Se corta en lo primero que aparezca de "Leyenda" o "Almuerzo": la jefa
+    # a veces quita el rótulo "Leyenda:" (la reacomoda al lado del turno 1),
+    # así que no basta con buscar solo ese texto — la tabla de Almuerzo es
+    # el límite más confiable porque siempre tiene que estar para que la
+    # app lea las horas.
     fila_fin_cuadro = len(grid)
     for r in range(fila_encabezado + 1, len(grid)):
-        if any(_norm(t).startswith("leyenda") for t, _ in grid[r]):
+        if any(_norm(t).startswith(("leyenda", "almuerzo")) for t, _ in grid[r]):
             fila_fin_cuadro = r
             break
 
