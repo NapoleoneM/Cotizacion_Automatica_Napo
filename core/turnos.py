@@ -446,17 +446,19 @@ def calcular_cobertura(horario, ahora, presencia=None, estados=None,
 
     Listas que ve soporte:
       - requieren_cobertura: sin señal y SIN cobertura vigente → alarma roja.
-        Aplica en los tres momentos en que puede faltar alguien: antes de
-        entrar (pasada la tolerancia), en turno, y después de que su turno
-        terminó (hasta el cierre del día).
+        Aplica en los dos momentos en que puede faltar alguien mientras se le
+        espera: antes de entrar (pasada la tolerancia) y durante su turno.
+        Una vez que su turno termina deja de ser urgente (ver no_se_espera).
       - ausencia_informada:  en turno con estado (almuerzo…) o novedad; O
-        cualquiera de los tres momentos de arriba pero YA con "Yo lo cubro"
-        vigente (< VENCIMIENTO_COBERTURA_MIN). Si la cobertura vence y sigue
-        sin señal, vuelve a "Requieren cobertura".
+        sin señal en turno pero YA con "Yo lo cubro" vigente
+        (< VENCIMIENTO_COBERTURA_MIN). Si la cobertura vence y sigue sin
+        señal, vuelve a "Requieren cobertura".
       - en_linea:            atendiendo (o quedándose ayudando), señal reciente
       - por_entrar:          aún dentro de la tolerancia — nunca es urgente,
         se puede cubrir de forma preventiva pero no expira ni alarma
-      - no_se_espera:        compensatorio / ausencia / cambio de horario
+      - no_se_espera:        compensatorio / ausencia / cambio de horario; y
+        cualquiera cuyo turno ya terminó (con o sin "Yo lo cubro" — ya no se
+        exige confirmación, solo se informa quién quedó cubriendo si aplica)
     """
     presencia = presencia or {}
     estados = estados or {}
@@ -590,30 +592,30 @@ def calcular_cobertura(horario, ahora, presencia=None, estados=None,
             res["en_linea"].append(item)
             continue
 
-        # 4) Sin señal, sin explicación: necesita que alguien confirme la
-        # cobertura. Si ya hay una reclamada y vigente (< 90 min desde "Yo lo
-        # cubro"), se muestra sin alarma; si nunca la hubo, o ya venció,
-        # queda (o vuelve a quedar) en "Requieren cobertura".
+        # 4) Sin señal, sin explicación:
         if not _rol_cubrible(rol):
             continue                                # soporte/jefe/web: no se cubre
 
         if not dentro_turno:
+            # Su turno ya terminó: no se vuelve a esperar nada de él/ella hoy,
+            # esté cubierto o no — ya no exige que soporte confirme cobertura
+            # para bajar el ruido, va directo a "Hoy no se espera".
             item["turno_terminado"] = True
-            motivo = f"su turno terminó a las {item['hasta']} y nadie confirmó cobertura"
-        else:
-            motivo = ("sin señal desde el inicio del turno" if mins is None
-                      else f"sin actividad hace {int(mins)} min")
+            item["estado_etq"] = f"Su turno terminó a las {item['hasta']}"
+            res["no_se_espera"].append(item)
+            continue
+
+        # Dentro del turno, sin señal: necesita que alguien confirme la
+        # cobertura. Si ya hay una reclamada y vigente (< 90 min desde "Yo lo
+        # cubro"), se muestra sin alarma; si nunca la hubo, o ya venció,
+        # queda (o vuelve a quedar) en "Requieren cobertura".
+        motivo = ("sin señal desde el inicio del turno" if mins is None
+                  else f"sin actividad hace {int(mins)} min")
 
         vigente = bool(cob) and (time.time() - cob["desde"]) / 60.0 <= VENCIMIENTO_COBERTURA_MIN
         if vigente:
             item["estado_etq"] = motivo.capitalize()
-            # Turno terminado y ya cubierto: menos ruido en "Ausencia informada"
-            # — se ve en "Hoy no se espera" mientras la cobertura esté vigente.
-            # Si vence sin señal, vuelve a "Requieren cobertura" igual que siempre.
-            if not dentro_turno:
-                res["no_se_espera"].append(item)
-            else:
-                res["ausencia_informada"].append(item)
+            res["ausencia_informada"].append(item)
         else:
             item["cubierto_por"] = None    # si había una reclamación, ya venció: se pide de nuevo
             item["cubierto_desde"] = None

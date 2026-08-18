@@ -32,6 +32,8 @@ _lock = threading.Lock()
 _iniciada = False
 
 # Estados que puede marcar el asesor. 'atiende' = está trabajando en chats.
+# Capacitación y Reunión NO están aquí: se reportan como "novedad" (con
+# anticipación, por el propio asesor o un compañero), no como estado en vivo.
 ESTADOS_ASESOR = {
     "en_chat": {"etiqueta": "En chat", "atiende": True},
     # Cuando la zona presencial se llena (o falta una vendedora presencial), un
@@ -40,8 +42,8 @@ ESTADOS_ASESOR = {
     # que soporte debe cubrirlos. Se mide aparte porque frena la operación.
     "presencial": {"etiqueta": "En zona presencial", "atiende": False},
     "almuerzo": {"etiqueta": "Almuerzo", "atiende": False},
-    "capacitacion": {"etiqueta": "Capacitación", "atiende": False},
-    "reunion": {"etiqueta": "Reunión", "atiende": False},
+    # No seleccionable a mano (queda fuera de "estados_posibles" en la API):
+    # lo marca solo el navegador al cerrar la pestaña (sendBeacon).
     "desconectado": {"etiqueta": "Desconectado", "atiende": False},
 }
 
@@ -49,14 +51,16 @@ ESTADOS_ASESOR = {
 ESTADO_PRESENCIAL = "presencial"
 
 TIPOS_NOVEDAD = ["Ausencia", "Llegada tarde", "Salida anticipada", "Permiso",
-                 "Incapacidad", "Cita médica", "Apoyo a presencial", "Otro"]
+                 "Incapacidad", "Cita médica", "Apoyo a presencial",
+                 "Capacitación", "Reunión", "Otro"]
 
 # Novedades que dejan un puesto sin atender: el panel suena para avisar a soporte.
 # Una "Llegada tarde" o una "Cita médica" avisada no despiertan la alarma.
-# "Apoyo a presencial" también avisa: deja chats sin atender aunque la persona
-# esté trabajando, y es justo lo que soporte necesita saber para entrar.
+# "Apoyo a presencial", "Capacitación" y "Reunión" también avisan: dejan chats
+# sin atender aunque la persona esté "trabajando", y es justo lo que soporte
+# necesita saber para entrar a cubrir.
 TIPOS_IMPORTANTES = {"Ausencia", "Incapacidad", "Salida anticipada",
-                     "Apoyo a presencial"}
+                     "Apoyo a presencial", "Capacitación", "Reunión"}
 
 
 def clave(nombre):

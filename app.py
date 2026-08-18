@@ -516,8 +516,10 @@ def api_turnos_estado():
     horario, err = _horario_actual()
     novedades = almacen.novedades_del_dia()
     base = {
+        # "desconectado" queda fuera: solo lo marca el navegador al cerrar la
+        # pestaña (sendBeacon), no es una opción que el asesor elija a mano.
         "estados_posibles": [{"clave": k, "etiqueta": v["etiqueta"], "atiende": v["atiende"]}
-                             for k, v in almacen.ESTADOS_ASESOR.items()],
+                             for k, v in almacen.ESTADOS_ASESOR.items() if k != "desconectado"],
         "tipos_novedad": almacen.TIPOS_NOVEDAD,
         "tipos_ajuste": [{"clave": k, "etiqueta": v["etiqueta"], "pide": v["pide"]}
                          for k, v in almacen.TIPOS_AJUSTE.items()],

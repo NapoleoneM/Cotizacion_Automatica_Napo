@@ -23,8 +23,8 @@ navegador). Es una herramienta de coordinación, no de control de acceso.
    - **En línea** — con actividad reciente.
    - **Aún no entran** — su turno todavía no comienza (no se alerta).
    - **Hoy no se espera** — compensatorio, ausencia o cambio de horario; y
-     quien terminó su turno y ya tiene cobertura vigente (menos ruido que
-     "Ausencia informada" para un caso ya resuelto).
+     cualquiera cuyo turno ya terminó (esté cubierto o no — dejó de ser
+     urgente, solo se informa quién quedó cubriendo si aplica).
 
 La lengüeta del borde derecho se pone **roja con un contador** cuando hay gente
 por cubrir, así soporte lo nota sin abrir el panel.
@@ -89,13 +89,24 @@ Un contador rojo no sirve si nadie mira la pantalla, así que el panel **suena**
 cuando aparece algo que exige acción:
 
 - **Doble pitido** — una novedad *importante* (Ausencia, Incapacidad, Salida
-  anticipada) o alguien nuevo que queda **sin cubrir**.
+  anticipada, Apoyo a presencial, Capacitación, Reunión) o alguien nuevo que
+  queda **sin cubrir**.
 - **Un pitido** — el resto de novedades (Llegada tarde, Cita médica, Permiso…).
 
 Además, si la pestaña está en segundo plano, **el título parpadea** con el
 nombre de la persona. La campanita 🔔 de la cabecera silencia el sonido (queda
 guardado por navegador, así cada quien decide). Al abrir el panel no suena: solo
 avisa de lo que llega *después*.
+
+Para **soporte** el aviso es más insistente, porque es quien de verdad tiene que
+actuar:
+
+- **Pitido repetido cada minuto** mientras siga habiendo alguien en "Requieren
+  cobertura" — no basta con avisar una sola vez cuando aparece.
+- **Notificación nativa del navegador** (fuera de la pestaña, funciona incluso
+  minimizado) por cada persona nueva que cae en "Requieren cobertura". Pide
+  permiso la primera vez que alguien con `*`/rol Soporte abre el panel; si lo
+  rechaza, sigue funcionando el pitido y el parpadeo del título igual.
 
 El sonido se genera en el navegador (sin archivos externos). Si el navegador lo
 bloquea por su política de autoplay, el aviso visual sigue funcionando.
@@ -173,15 +184,19 @@ aplica automáticamente.
 
 ## Estados del asesor
 
-El asesor marca en el panel **"Estoy:"** — En chat, Almuerzo, Capacitación,
-Reunión, Desconectado (se quitaron *Disponible*, que "En chat" ya cubre, y
-*Baño*, por ser tiempos demasiado breves para justificar un aviso). Sirve para
-separar dos cosas que antes se confundían:
+El asesor marca en el panel **"Estoy:"** — En chat, Almuerzo, En zona
+presencial (se quitaron *Disponible*, que "En chat" ya cubre, y *Baño*, por
+ser tiempos demasiado breves para justificar un aviso). Capacitación y
+Reunión **no están aquí**: al ser planeadas con anticipación, se reportan
+como **novedad** (ver más abajo), no como estado en vivo. "Desconectado"
+tampoco es seleccionable a mano — lo marca solo el navegador al cerrar la
+pestaña (ver más abajo). Sirve para separar dos cosas que antes se confundían:
 
 - **Requieren cobertura (rojo):** en turno y **sin ninguna explicación**. Esto
   es lo que de verdad hay que atender.
 - **Ausencia informada (amarillo):** en turno pero con un estado (almuerzo,
-  capacitación…) o una novedad reportada. Soporte decide si cubre.
+  zona presencial…) o una novedad reportada (capacitación, reunión…). Soporte
+  decide si cubre.
 
 El contador rojo de la lengüeta cuenta **solo** los del primer grupo, para que
 una alerta signifique siempre lo mismo.
@@ -194,27 +209,19 @@ solo**, sin tener que seleccionarlo — aparece en "Ausencia informada" y no
 dispara alarma. Lo único que lo invalida es que ya haya marcado
 **"Desconectado"** explícitamente.
 
-### Cobertura hasta el cierre del día, y "Yo lo cubro" que vence
+### "Yo lo cubro" que vence, y turno terminado que ya no espera
 
-"Requieren cobertura" (rojo) no es solo "en turno, sin explicación": aplica en
-**tres momentos** en que puede faltar alguien —
+"Requieren cobertura" (rojo) aplica en **dos momentos** en que puede faltar
+alguien mientras se le espera —
 
-1. Antes de entrar (pasados los 15 min de gracia, sin señal) — de siempre.
-2. En turno, sin explicación — de siempre.
-3. **Después de que su turno terminó**, hasta la **hora de cierre del día**
-   (la más tardía entre los 3 turnos, normalmente el fin del turno 3, 9pm).
-   No basta con asumir que el solapamiento con el siguiente turno ya lo
-   resuelve: si nadie confirma, queda en rojo igual. Pasado el cierre, ya no
-   se rastrea — el tiempo nocturno no cuenta.
+1. Antes de entrar (pasados los 15 min de gracia, sin señal).
+2. En turno, sin explicación.
 
-Cuando soporte presiona **"Yo lo cubro"** en cualquiera de esos tres casos, la
+Cuando soporte presiona **"Yo lo cubro"** en cualquiera de esos dos casos, la
 persona **sale del rojo** y pasa a mostrarse en la sección que explica el
 porqué, con "cubre [soporte] desde [hora]":
 - **Antes de entrar** → "Aún no entran".
 - **En turno, sin explicación** → "Ausencia informada".
-- **Turno ya terminado** → **"Hoy no se espera"** (no "Ausencia informada" —
-  para no mezclar "cubierto y resuelto por hoy" con las ausencias del día que
-  sí necesitan seguimiento activo).
 
 Pero esa cobertura **vence a los 90 minutos**: si para entonces sigue sin
 señal, **vuelve al rojo** — hay que confirmarla de nuevo, no vale con
@@ -226,6 +233,15 @@ La única excepción es **"Aún no entran"**: ahí el botón "Yo lo cubro" es so
 para adelantarse (si soporte ya sabe que alguien va a cubrir a quien está por
 entrar), pero nunca fuerza nada a rojo ni vence — antes de que se cumpla la
 tolerancia, nunca es urgente.
+
+**Cuando el turno de alguien termina, deja de ser urgente**: pasa directo a
+**"Hoy no se espera"**, esté cubierto o no — ya no hace falta que soporte
+confirme cobertura para bajar el ruido. Si alguien sí dio "Yo lo cubro" se ve
+reflejado ("cubre [soporte] desde [hora]"), pero no es obligatorio ni tiene
+vencimiento: es solo informativo. Esto sigue así hasta la **hora de cierre
+del día** (la más tardía entre los 3 turnos, normalmente el fin del turno 3);
+pasado el cierre, la persona ya no aparece en ninguna lista — el tiempo
+nocturno no se rastrea.
 
 ### Desconectado automático al cerrar
 

@@ -575,6 +575,7 @@ function botonCubrir(x) {
 
 function renderPanel(d) {
   rolesActual = d.roles || {};
+  pedirPermisoNotificacion();
   refrescarSello();
   revisarAvisos(d);
   $("#panel-semana").textContent =
@@ -665,6 +666,12 @@ function renderPanel(d) {
     pintarCamposAjuste();
   }
 
+  // Tipos de novedad en el formulario
+  const selNov = $("#nov-tipo");
+  if ((d.tipos_novedad || []).length && selNov.options.length === 0) {
+    d.tipos_novedad.forEach(t => selNov.add(new Option(t, t)));
+  }
+
   pintarLista($("#lista-novedades"), d.novedades, x => {
     const d2 = el("div", "panel-item amarillo");
     const quitar = el("button", "panel-quitar", "✕");
@@ -698,9 +705,10 @@ function renderPanel(d) {
   pintarLista($("#lista-nospera"), d.no_se_espera, x => {
     const d2 = itemBase(x, "");
     // Compensatorio/Ausencia/Cambio de horario no llevan nada más — solo el
-    // caso de "turno terminado y ya cubierto" trae esta info adicional.
-    if (x.cubierto_por) {
-      d2.append(el("span", "det", `${x.estado_etq || "Turno terminado"} · cubre ${x.cubierto_por} desde ${x.cubierto_desde || ""}`));
+    // caso de "turno terminado" trae esta info adicional (con o sin cobertura).
+    if (x.turno_terminado || x.cubierto_por) {
+      const cubre = x.cubierto_por ? ` · cubre ${x.cubierto_por} desde ${x.cubierto_desde || ""}` : "";
+      d2.append(el("span", "det", `${x.estado_etq || "Turno terminado"}${cubre}`));
     }
     return d2;
   });
@@ -765,8 +773,26 @@ let novVistas = null;          // ids de novedades ya avisadas
 let cobVistas = null;          // nombres ya avisados como sin cubrir
 let tituloOriginal = document.title;
 let parpadeo = null;
+let repiqueCobertura = null;   // pitido cada 1 min mientras alguien siga sin cubrir (solo soporte)
 
 function estaMudo() { return localStorage.getItem(MUDO_KEY) === "1"; }
+
+// Notificación nativa del sistema (funciona con el navegador minimizado, no
+// solo en segundo plano). Solo para soporte, y solo tras dar el permiso.
+function pedirPermisoNotificacion() {
+  if (!esSoporteYo() || !("Notification" in window)) return;
+  if (Notification.permission === "default") Notification.requestPermission();
+}
+
+function notificarCobertura(nombre) {
+  if (!("Notification" in window) || Notification.permission !== "granted") return;
+  try {
+    new Notification("⚠️ Requieren cobertura", {
+      body: `${nombre} quedó sin cubrir — entra al panel de Turnos.`,
+      tag: "cobertura-" + nombre,   // evita apilar varias del mismo nombre
+    });
+  } catch (e) { /* algunos navegadores bloquean Notification sin foco */ }
+}
 
 function sonar(doble) {
   if (estaMudo()) return;
@@ -815,22 +841,33 @@ function revisarAvisos(d) {
   const nomCob = new Set(cob.map(x => x.nombre));
 
   // Primera carga: solo se toma nota, sin sonar (evita el pitido al abrir).
-  if (novVistas === null) { novVistas = idsNov; cobVistas = nomCob; return; }
+  if (novVistas === null) { novVistas = idsNov; cobVistas = nomCob; }
+  else {
+    const nuevasNov = novs.filter(n => !novVistas.has(n.id));
+    const nuevasCob = cob.filter(x => !cobVistas.has(x.nombre));
+    const importante = nuevasNov.some(n => n.importante);
 
-  const nuevasNov = novs.filter(n => !novVistas.has(n.id));
-  const nuevasCob = cob.filter(x => !cobVistas.has(x.nombre));
-  const importante = nuevasNov.some(n => n.importante);
-
-  if (importante || nuevasCob.length) {
-    sonar(true);
-    const quien = importante ? nuevasNov.find(n => n.importante).nombre
-                             : nuevasCob[0].nombre;
-    avisarEnTitulo(`⚠️ ${quien} — revisar turnos`);
-  } else if (nuevasNov.length) {
-    sonar(false);
+    if (importante || nuevasCob.length) {
+      sonar(true);
+      const quien = importante ? nuevasNov.find(n => n.importante).nombre
+                               : nuevasCob[0].nombre;
+      avisarEnTitulo(`⚠️ ${quien} — revisar turnos`);
+      nuevasCob.forEach(x => notificarCobertura(x.nombre));
+    } else if (nuevasNov.length) {
+      sonar(false);
+    }
+    novVistas = idsNov;
+    cobVistas = nomCob;
   }
-  novVistas = idsNov;
-  cobVistas = nomCob;
+
+  // Para soporte: mientras alguien siga en "Requieren cobertura", un pitido
+  // extra cada minuto — no basta con avisar una sola vez cuando aparece.
+  if (esSoporteYo() && cob.length && !estaMudo()) {
+    if (!repiqueCobertura) repiqueCobertura = setInterval(() => sonar(true), 60000);
+  } else if (repiqueCobertura) {
+    clearInterval(repiqueCobertura);
+    repiqueCobertura = null;
+  }
 }
 
 // --- Sello de fecha y hora del servidor (imagen, no texto editable) ---

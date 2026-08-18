@@ -257,35 +257,37 @@ c8 = turnos.calcular_cobertura(h, datetime(2026, 7, 27, 23, 0))
 chk(not c8["requieren_cobertura"], "11:00pm -> nadie en turno, sin alertas")
 
 # =====================================================
-# Turno terminado: sin cobertura reclamada -> ALARMA ROJA (no ausencia
-# informada); con "Yo lo cubro" vigente -> ausencia informada; vencida
-# (> 90 min) -> vuelve a alarma roja. Después del cierre, no se rastrea.
+# Turno terminado: ya no exige que soporte confirme cobertura para bajar el
+# ruido — va directo a "Hoy no se espera", esté cubierto o no, y aunque una
+# cobertura vieja haya vencido. Después del cierre, no se rastrea.
 # =====================================================
 LUNES_5PM = datetime(2026, 7, 27, 17, 0)  # Estefania (T1, 8am-4pm) ya terminó
 c10 = turnos.calcular_cobertura(h, LUNES_5PM)
-est_roja = [x for x in c10["requieren_cobertura"] if x["nombre"] == "Estefania"]
-chk(bool(est_roja) and est_roja[0].get("turno_terminado") is True,
-    f"5pm sin cobertura: Estefania (T1 terminó) va a Requieren cobertura: {est_roja}")
+est_ns = [x for x in c10["no_se_espera"] if x["nombre"] == "Estefania"]
+chk(bool(est_ns) and est_ns[0].get("turno_terminado") is True,
+    f"5pm sin cobertura: Estefania (T1 terminó) va directo a 'Hoy no se espera': {est_ns}")
+chk("Estefania" not in {x["nombre"] for x in c10["requieren_cobertura"]},
+    "Turno terminado SIN cobertura ya no dispara alarma roja")
 chk("Estefania" not in {x["nombre"] for x in c10["ausencia_informada"]},
-    "Turno terminado SIN cobertura no aparece en ausencia informada")
+    "Turno terminado SIN cobertura tampoco aparece en Ausencia informada")
 
 cob_fresca = {turnos.clave("Estefania"): {"soporte": "Cristian", "desde": time.time() - 10 * 60,
                                            "desde_hora": "4:50 PM"}}
 c10b = turnos.calcular_cobertura(h, LUNES_5PM, coberturas=cob_fresca)
 est_cub = [x for x in c10b["no_se_espera"] if x["nombre"] == "Estefania"]
 chk(bool(est_cub) and est_cub[0].get("cubierto_por") == "Cristian",
-    f"5pm con 'Yo lo cubro' de hace 10 min: pasa a 'Hoy no se espera' (menos ruido): {est_cub}")
+    f"5pm con 'Yo lo cubro' de hace 10 min: en 'Hoy no se espera', mostrando quién cubre: {est_cub}")
 chk("Estefania" not in {x["nombre"] for x in c10b["requieren_cobertura"]},
-    "Con cobertura vigente, ya no está en Requieren cobertura")
-chk("Estefania" not in {x["nombre"] for x in c10b["ausencia_informada"]},
-    "Turno terminado + cubierto ya NO va en 'Ausencia informada' (se movió a 'Hoy no se espera')")
+    "Con o sin cobertura, turno terminado ya no está en Requieren cobertura")
 
 cob_vencida = {turnos.clave("Estefania"): {"soporte": "Cristian", "desde": time.time() - 95 * 60,
                                             "desde_hora": "3:25 PM"}}
 c10c = turnos.calcular_cobertura(h, LUNES_5PM, coberturas=cob_vencida)
-est_venc = [x for x in c10c["requieren_cobertura"] if x["nombre"] == "Estefania"]
-chk(bool(est_venc) and est_venc[0].get("cubierto_por") is None,
-    f"Cobertura de hace 95 min (> 90) ya venció: vuelve a Requieren cobertura: {est_venc}")
+est_venc = [x for x in c10c["no_se_espera"] if x["nombre"] == "Estefania"]
+chk(bool(est_venc) and est_venc[0].get("turno_terminado") is True,
+    f"Turno terminado: aunque la cobertura de hace 95 min venza, sigue en 'Hoy no se espera' (ya no alarma): {est_venc}")
+chk("Estefania" not in {x["nombre"] for x in c10c["requieren_cobertura"]},
+    "Turno terminado nunca vuelve a Requieren cobertura, aunque la cobertura haya vencido")
 
 LUNES_10PM = datetime(2026, 7, 27, 22, 0)  # pasado el cierre del día (9pm)
 c11 = turnos.calcular_cobertura(h, LUNES_10PM)
