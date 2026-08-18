@@ -537,6 +537,11 @@ def api_turnos_estado():
         coberturas=almacen.coberturas_activas(),
         ajustes=almacen.ajustes_del_dia(),
     )
+    # Trazabilidad: registra quién está AHORA en "Requieren cobertura" para
+    # poder medir después cuánto tiempo pasó sin que nadie confirmara y qué
+    # tan rápido reaccionó soporte (ver Gestión → resumen).
+    almacen.registrar_alertas_activas([x["nombre"] for x in datos["requieren_cobertura"]])
+
     # El equipo registrado en la app (panel de Gestión) se suma al selector
     # "Soy:" aunque la hoja de Sheets sea la fuente activa del horario — así
     # se puede dar de alta a alguien (ej. una cuenta de pruebas) sin tocar la
@@ -716,13 +721,22 @@ def api_equipo_quitar(req: PersonaReq, request: Request):
 @app.get("/api/gestion/resumen")
 def api_gestion_resumen(request: Request, desde: str = "", hasta: str = ""):
     """Resumen por persona de un rango (por defecto, la semana en curso):
-    días con señal, hora de entrada típica, novedades y minutos cubierto."""
+    días con señal, hora de entrada típica, novedades, minutos cubierto,
+    minutos sin cobertura confirmada (cumplimiento) y tiempo de respuesta
+    de soporte."""
     negado = _solo_jefa(request)
     if negado:
         return negado
     if not (_FECHA_RE.match(desde or "") and _FECHA_RE.match(hasta or "")):
         desde, hasta = almacen.rango_semana()
-    return almacen.resumen(desde, hasta)
+    res = almacen.resumen(desde, hasta)
+    horario, _ = _horario_actual()
+    roles = (horario or {}).get("roles") or {}
+    equipo_roles = {p["clave"]: p["rol"] for p in almacen.equipo()}
+    for p in res["personas"]:
+        # El "*"/hoja manda; si no está ahí, se usa el rol del panel de Equipo.
+        p["rol"] = roles.get(almacen.clave(p["nombre"])) or equipo_roles.get(almacen.clave(p["nombre"]), "")
+    return res
 
 
 @app.get("/api/gestion/dia")

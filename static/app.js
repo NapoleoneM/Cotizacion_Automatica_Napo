@@ -904,6 +904,18 @@ async function guardarPersona() {
 // --- Vista de gestión: solo aparece con el PIN de la jefa de ventas ---
 let esJefa = false;
 
+// Umbrales de veredicto — ajustables si con el uso real resultan muy
+// estrictos o muy permisivos. Se acumulan sobre el rango mostrado (por
+// defecto, la semana en curso), no por día.
+const VEREDICTO_ASESOR_MIN = [15, 60];       // minutos sin cobertura confirmada
+const VEREDICTO_SOPORTE_MIN = [10, 30];      // minutos de respuesta promedio
+
+function veredicto(minutos, [verde, amarillo]) {
+  if (minutos <= verde) return "verde";
+  if (minutos <= amarillo) return "amarillo";
+  return "rojo";
+}
+
 async function cargarGestion() {
   if (!esJefa) return;
   try {
@@ -913,16 +925,38 @@ async function cargarGestion() {
     const t = d.totales || {};
     $("#gestion-totales").textContent =
       `${d.desde} a ${d.hasta} · ${t.personas || 0} personas · ` +
-      `${t.novedades || 0} novedades · ${t.minutos_cubierto || 0} min cubiertos` +
+      `${t.novedades || 0} novedades · ${t.minutos_sin_cobertura || 0} min sin cobertura` +
       (t.minutos_presencial ? ` · 🏬 ${t.minutos_presencial} min en presencial` : "");
-    pintarLista($("#gestion-personas"), d.personas, p => {
-      const d2 = el("div", "panel-item");
-      d2.append(el("span", "nom", p.nombre));
-      const partes = [`entra ~${p.entrada_tipica}`, `${p.dias_con_senal} días`];
+
+    const personas = d.personas || [];
+    const esSoporte = p => (p.rol || "").toLowerCase().includes("soporte");
+    const asesores = personas.filter(p => !esSoporte(p))
+      .sort((a, b) => b.minutos_sin_cobertura - a.minutos_sin_cobertura);
+    const soporte = personas.filter(esSoporte)
+      .sort((a, b) => b.min_respuesta_prom - a.min_respuesta_prom);
+
+    pintarLista($("#gestion-asesores"), asesores, p => {
+      const v = veredicto(p.minutos_sin_cobertura, VEREDICTO_ASESOR_MIN);
+      const d2 = itemBase(p, v);
+      const partes = [`entra ~${p.entrada_tipica}`, `${p.dias_con_senal} días con señal`];
+      partes.push(p.minutos_sin_cobertura
+        ? `${p.minutos_sin_cobertura} min sin cobertura (${p.episodios_sin_cobertura}×)`
+        : "sin episodios sin cobertura");
       if (p.total_novedades) partes.push(`${p.total_novedades} novedades`);
-      if (p.minutos_cubierto) partes.push(`${p.minutos_cubierto} min cubierto`);
-      if (p.veces_cubriendo) partes.push(`cubrió ${p.veces_cubriendo}`);
       if (p.minutos_presencial) partes.push(`🏬 ${p.minutos_presencial} min presencial`);
+      d2.append(el("span", "det", partes.join(" · ")));
+      return d2;
+    });
+
+    pintarLista($("#gestion-soporte"), soporte, p => {
+      // Sin ninguna respuesta registrada no significa que incumplió — puede
+      // ser que sencillamente no hubo nada que cubrir en el rango.
+      const v = p.veces_respondio ? veredicto(p.min_respuesta_prom, VEREDICTO_SOPORTE_MIN) : "gris";
+      const d2 = itemBase(p, v);
+      const partes = p.veces_respondio
+        ? [`cubrió ${p.veces_respondio}×`, `~${p.min_respuesta_prom} min de respuesta`]
+        : ["sin coberturas registradas en el rango"];
+      if (p.minutos_cubierto) partes.push(`${p.minutos_cubierto} min cubriendo en total`);
       d2.append(el("span", "det", partes.join(" · ")));
       return d2;
     });

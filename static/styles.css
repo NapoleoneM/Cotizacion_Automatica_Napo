@@ -153,6 +153,8 @@ details.panel-sec > summary { cursor: pointer; list-style: revert; }
 .panel-item.rojo { border-left-color: #e74c3c; }
 .panel-item.amarillo { border-left-color: var(--naranja); }
 .panel-item.verde { border-left-color: var(--verde); }
+/* Sin datos suficientes para un veredicto (ej. soporte sin nada que cubrir) */
+.panel-item.gris { border-left-color: var(--texto-suave); }
 /* Traslado a la zona presencial: ni alarma ni ausencia normal */
 .panel-item.morado { border-left-color: #8e7cc3; }
 /* Ajuste de horario del día (movimiento sobre el plan de la semana) */
