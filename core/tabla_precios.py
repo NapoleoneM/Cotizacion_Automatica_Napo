@@ -10,7 +10,7 @@ import gspread
 from core.app_config import log
 # Mismo documento espejo que alimenta los precios mayoristas — el ID vive en
 # un solo lugar para que un cambio de documento no deje fuentes mezcladas.
-from core.mayorista_logic import _SPREADSHEET_ID, _SHEET_GID
+from core.mayorista_logic import _SPREADSHEET_ID, _HOJA_TABLAS
 
 _RANGO = "A1:AH50"  # hasta AH para incluir la tabla NEOROS (antes se cortaba en AE)
 _SCOPES = ["https://www.googleapis.com/auth/spreadsheets.readonly"]
@@ -35,7 +35,7 @@ def parsear_grid(meta):
     """Convierte la respuesta de la API (includeGridData) en una estructura
     simple lista para dibujar: tamaños en px, celdas con estilo y merges."""
     hoja = next(
-        s for s in meta["sheets"] if s["properties"]["sheetId"] == _SHEET_GID
+        s for s in meta["sheets"] if s["properties"]["title"] == _HOJA_TABLAS
     )
     data = hoja["data"][0]
     filas = data.get("rowData", [])
@@ -100,7 +100,7 @@ def obtener_tabla_precios(ruta_credenciales):
         except AttributeError:
             pass
         spreadsheet = gc.open_by_key(_SPREADSHEET_ID)
-        worksheet = spreadsheet.get_worksheet_by_id(_SHEET_GID)
+        worksheet = spreadsheet.worksheet(_HOJA_TABLAS)
         meta = spreadsheet.fetch_sheet_metadata(params={
             "includeGridData": "true",
             "ranges": f"'{worksheet.title}'!{_RANGO}",

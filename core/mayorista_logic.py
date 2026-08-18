@@ -4,12 +4,15 @@ import gspread
 from core.app_config import log
 
 # Documento ESPEJO de precios ("Precio de tablas publica"): réplica de la hoja
-# Tablas del CORE, refrescada cada 5 min por un Apps Script del lado de Google.
+# Tablas del CORE, refrescada por un Apps Script del lado de Google.
 # La app NUNCA debe apuntar al documento CORE — el service account empaquetado
 # solo tiene acceso a este espejo, así una filtración de credenciales no expone
 # las hojas confidenciales. (Migrado el 2026-06-25.)
 _SPREADSHEET_ID = "1S7L7oXZRfMCo6m_QSuzEH2eoIppu91xM_34NIWy5Cnc"
-_SHEET_GID = 988798885
+# Por NOMBRE, no por gid: el Apps Script recrea la pestaña con copyTo() en
+# cada actualización, y eso le asigna un gid interno nuevo cada vez aunque
+# el nombre se mantenga igual.
+_HOJA_TABLAS = "Tablas"
 # Solo lectura — el service account no necesita permisos de escritura
 _SCOPES = ["https://www.googleapis.com/auth/spreadsheets.readonly"]
 
@@ -51,7 +54,7 @@ def obtener_precios_sheets(ruta_credenciales):
         except AttributeError:
             pass
         spreadsheet = gc.open_by_key(_SPREADSHEET_ID)
-        worksheet = spreadsheet.get_worksheet_by_id(_SHEET_GID)
+        worksheet = spreadsheet.worksheet(_HOJA_TABLAS)
         reader = worksheet.get_all_values()
 
         def get_val(row, col):
@@ -73,10 +76,10 @@ def obtener_precios_sheets(ruta_credenciales):
                 "Recargo +4": get_val(37, 16)
             },
             "Bolas": {
-                "Lisa contado": get_val(39, 16),
-                "Lisa crédito": get_val(39, 17),
-                "Diamantada contado": get_val(40, 16),
-                "Diamantada crédito": get_val(40, 17)
+                "Lisa contado": get_val(40, 16),
+                "Lisa crédito": get_val(40, 17),
+                "Diamantada contado": get_val(41, 16),
+                "Diamantada crédito": get_val(41, 17)
             }
         }
         # Si una tarifa llega en 0 es porque el Sheet cambió de estructura o la
