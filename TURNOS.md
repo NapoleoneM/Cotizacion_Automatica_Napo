@@ -21,11 +21,12 @@ navegador). Es una herramienta de coordinación, no de control de acceso.
      hay señal: *a estos hay que entrarles*.
    - **Novedades de hoy** — ausencias/permisos reportados, con hora y nota.
    - **En línea** — con actividad reciente.
-   - **Aún no entran** — su turno todavía no comienza (no se alerta). Excepto
-     turno 2/3 con el día ya abierto: ver "Pendientes de ayer" más abajo.
+   - **Aún no entran** — su turno todavía no comienza (no se alerta dentro de
+     la tolerancia). Turno 2/3 con el día ya abierto es distinto: ver
+     "Pendientes de clientes" más abajo.
    - **Hoy no se espera** — compensatorio, ausencia o cambio de horario; y
-     cualquiera cuyo turno ya terminó (esté cubierto o no — dejó de ser
-     urgente, solo se informa quién quedó cubriendo si aplica).
+     cualquier turno ya terminado con "Yo lo cubro" vigente (ver "Pendientes
+     de clientes" — si esa cobertura vence, vuelve a "Requieren cobertura").
 
 La lengüeta del borde derecho se pone **roja con un contador** cuando hay gente
 por cubrir, así soporte lo nota sin abrir el panel.
@@ -237,39 +238,45 @@ reclamarla una sola vez. Si en cualquier momento la persona sí se conecta,
 pasa a "En línea" y nunca aparece en rojo, sin importar coberturas ni
 horarios.
 
-Hay dos excepciones donde el botón "Yo lo cubro" **no vence ni fuerza nada a
-rojo**, porque nunca es urgente: **"Aún no entran"** de turno 1, o de turno
-2/3 antes de que abra el día (adelantarse antes de que se cumpla la
-tolerancia), y **"Hoy no se espera"** por turno terminado (ver abajo) — en
-ambas es solo para que quede constancia de quién se hizo cargo, sin presión
-de tiempo. Turno 2/3 con el día ya abierto es la excepción a la excepción:
-ver "Pendientes de ayer" más abajo.
+La única excepción donde el botón "Yo lo cubro" **no vence ni fuerza nada a
+rojo**, porque nunca es urgente, es **"Aún no entran"** dentro de la
+tolerancia de 15 min (adelantarse antes de que se cumpla) — es solo para que
+quede constancia de quién se hizo cargo, sin presión de tiempo. Fuera de esa
+ventana de 15 min, todo lo demás (en turno, antes de entrar o después de
+salir) sí exige confirmación periódica — ver la sección siguiente.
 
-**Cuando el turno de alguien termina, deja de ser urgente**: pasa directo a
-**"Hoy no se espera"**, esté cubierto o no — ya no hace falta que soporte
-confirme cobertura para bajar el ruido. Si alguien sí dio "Yo lo cubro" se ve
-reflejado ("cubre [soporte] desde [hora]"), pero no es obligatorio ni tiene
-vencimiento: es solo informativo. Esto sigue así hasta la **hora de cierre
-del día** (la más tardía entre los 3 turnos, normalmente el fin del turno 3);
-pasado el cierre, la persona ya no aparece en ninguna lista — el tiempo
-nocturno no se rastrea.
+### Pendientes de clientes (antes de entrar y después de salir)
 
-### Pendientes de ayer (turno 2 y 3, antes de entrar)
+Fuera de su turno pero con el día operativo en marcha, alguien puede tener
+un cliente en proceso sin atender — un chat de ayer sin revisar, o uno que
+quedó a medias justo cuando salió. Aplica en dos momentos, con el mismo
+mecanismo pero un ciclo más largo que el de "en turno" (menos urgente, pero
+tampoco se olvida):
 
-A diferencia de turno 1 (que abre el día), alguien de **turno 2 o turno 3**
-puede tener chats de ayer sin revisar mientras espera a que empiece su
-turno de hoy. Desde que **abre el turno 1** y hasta que esa persona entra,
-cada **2 horas y media** sin que soporte confirme que ya los revisó, aparece
-en **"Requieren cobertura"** con el motivo *"entra a las [hora] pero puede
-tener chats pendientes de ayer sin revisar"** — a diferencia del resto de
-"Aún no entran", que nunca alarma.
+- **Turno 2/3, antes de entrar**: desde que **abre el turno 1** y hasta que
+  esa persona entra, puede tener chats de ayer sin revisar. (Turno 1 no
+  aplica acá — es quien abre el día.)
+- **Cualquier turno, después de salir**: desde el momento exacto en que
+  termina su turno y hasta el **cierre del día** (la hora más tardía entre
+  los 3 turnos), puede tener un cliente en proceso sin atender. (Turno 3 no
+  suele tener margen acá — termina justo al cierre.)
 
-Funciona con el mismo botón **"Yo lo cubro"**: al confirmarlo, la persona
-pasa a "Aún no entran" con la nota *"Pendientes de ayer ya revisados"*, y
-ahí se queda tranquila 2.5 horas; si pasa ese tiempo y sigue sin entrar,
-vuelve a pedir que alguien revise. En cuanto la persona misma se conecta,
-pasa a "En línea" como cualquier otro caso. No aplica a soporte ni a roles
-no cubribles, y turno 1 nunca lleva esta marca.
+En ambos casos, cada **2 horas y media** (`VENCIMIENTO_PENDIENTES_MIN`) sin
+que soporte confirme con **"Yo lo cubro"**, aparece en **"Requieren
+cobertura"** con un motivo propio ("puede tener chats pendientes de ayer sin
+revisar" / "puede tener clientes en proceso sin atender") — a diferencia del
+resto de "Aún no entran" o "Hoy no se espera", que nunca alarman por sí
+solos. Al confirmar, pasa a "Aún no entran" o "Hoy no se espera" (según el
+caso) con la nota *"Pendientes ya revisados"*, tranquilo por esas 2.5 horas;
+si se cumplen y la persona sigue sin entrar (o sin que alguien más confirme),
+vuelve a sonar. En cuanto la persona misma se conecta, pasa a "En línea"
+como cualquier otro caso. No aplica a soporte ni a roles no cubribles.
+
+Con el horario actual (turno 1: 8am-4pm, turno 2: 11am-7pm, turno 3: 2pm-9pm,
+cierre a las 9pm), el resultado práctico es: turno 2/3 revisados desde las
+8am hasta que entran; turno 1 revisado desde las 4pm; turno 2 revisado de
+nuevo desde las 7pm — todo hasta las 9pm, hora en la que deja de rastrearse
+cualquier cosa hasta que abra el turno 1 del día siguiente.
 
 ### Desconectado automático al cerrar
 

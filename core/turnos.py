@@ -479,23 +479,27 @@ def calcular_cobertura(horario, ahora, presencia=None, estados=None,
 
     Listas que ve soporte:
       - requieren_cobertura: sin señal y SIN cobertura vigente → alarma roja.
-        Aplica en los dos momentos en que puede faltar alguien mientras se le
-        espera: antes de entrar (pasada la tolerancia) y durante su turno.
-        Una vez que su turno termina deja de ser urgente (ver no_se_espera).
-        Turno 2/3 tienen un tercer caso, distinto: desde que abre el turno 1
-        y hasta que entran, cada VENCIMIENTO_PENDIENTES_MIN minutos sin que
-        soporte confirme, se pide revisar los chats pendientes de ayer — a
-        diferencia del resto de "aún no entran" (nunca urgente).
+        Tiene tres momentos, con dos velocidades distintas:
+          1) Durante su turno (o recién pasada la tolerancia al entrar): el
+             más urgente — "Yo lo cubro" dura VENCIMIENTO_COBERTURA_MIN.
+          2) Turno 2/3 ANTES de entrar, desde que abre el turno 1: puede
+             haber chats de ayer sin revisar.
+          3) Cualquier turno DESPUÉS de terminar, mientras el día operativo
+             sigue: puede haber un cliente en proceso sin atender.
+        Los momentos 2 y 3 son menos urgentes que el 1 — mismo mecanismo de
+        "Yo lo cubro", pero dura VENCIMIENTO_PENDIENTES_MIN (más largo).
       - ausencia_informada:  en turno con estado (almuerzo…) o novedad; O
         sin señal en turno pero YA con "Yo lo cubro" vigente
         (< VENCIMIENTO_COBERTURA_MIN). Si la cobertura vence y sigue sin
         señal, vuelve a "Requieren cobertura".
       - en_linea:            atendiendo (o quedándose ayudando), señal reciente
       - por_entrar:          aún dentro de la tolerancia — nunca es urgente,
-        se puede cubrir de forma preventiva pero no expira ni alarma
+        se puede cubrir de forma preventiva pero no expira ni alarma. Turno
+        2/3 con "Yo lo cubro" vigente de pendientes de ayer también cae acá.
       - no_se_espera:        compensatorio / ausencia / cambio de horario; y
-        cualquiera cuyo turno ya terminó (con o sin "Yo lo cubro" — ya no se
-        exige confirmación, solo se informa quién quedó cubriendo si aplica)
+        cualquier turno terminado con "Yo lo cubro" vigente de pendientes
+        (< VENCIMIENTO_PENDIENTES_MIN) — si vence y sigue sin señal, vuelve
+        a "Requieren cobertura" en vez de quedarse tranquilo para siempre.
     """
     presencia = presencia or {}
     estados = estados or {}
@@ -655,12 +659,22 @@ def calcular_cobertura(horario, ahora, presencia=None, estados=None,
             continue                                # soporte/jefe/web: no se cubre
 
         if not dentro_turno:
-            # Su turno ya terminó: no se vuelve a esperar nada de él/ella hoy,
-            # esté cubierto o no — ya no exige que soporte confirme cobertura
-            # para bajar el ruido, va directo a "Hoy no se espera".
+            # Su turno ya terminó, pero el día operativo sigue: puede haber
+            # un cliente en proceso sin atender. Mismo mecanismo que "antes
+            # de entrar" (ver arriba): cada VENCIMIENTO_PENDIENTES_MIN
+            # minutos sin que soporte confirme, se pide revisión de nuevo —
+            # un ciclo más largo que el de "en turno" porque ya no es tan
+            # urgente, pero tampoco se olvida solo porque el horario terminó.
             item["turno_terminado"] = True
-            item["estado_etq"] = f"Su turno terminó a las {item['hasta']}"
-            res["no_se_espera"].append(item)
+            vigente_pend = bool(cob) and (time.time() - cob["desde"]) / 60.0 <= VENCIMIENTO_PENDIENTES_MIN
+            if vigente_pend:
+                item["estado_etq"] = "Pendientes ya revisados"
+                res["no_se_espera"].append(item)
+            else:
+                item["cubierto_por"] = None
+                item["cubierto_desde"] = None
+                item["motivo"] = f"su turno terminó a las {item['hasta']} y puede tener clientes en proceso sin atender"
+                res["requieren_cobertura"].append(item)
             continue
 
         # Dentro del turno, sin señal: necesita que alguien confirme la
