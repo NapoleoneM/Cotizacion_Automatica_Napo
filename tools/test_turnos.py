@@ -371,5 +371,47 @@ chk(h_sl.get("roles", {}).get("elvia") == "Soporte" and h_sl.get("roles", {}).ge
 chk("cc tesoro" in h_sl.get("estados_leyenda", []),
     f"Leyenda detectada aunque esté junto al turno 1, no debajo: {h_sl.get('estados_leyenda')}")
 
+# =====================================================
+# Tabla de Almuerzo AL LADO del cuadro (mismas filas que la gente del turno
+# 1, no debajo de todo) — bug real de producción: "1 Turno"/"2 Turno"/
+# "3 Turno" son las claves de esa tabla, y si quedan en las filas de turno 1
+# se confunden con el inicio de un bloque nuevo — el turno 1 se cortaba a una
+# sola persona (la de la primera fila) y el resto caía en turno 2/3.
+# =====================================================
+FILAS_ALMUERZO_JUNTO = [
+    fila(cel(), cel(), cel("Semana del 17 al 23 de Agosto de 2026")),
+    fila(cel(), cel(), cel("Lunes 17"), cel("Martes 18"), cel("Miercoles 19"),
+         cel("Jueves 20"), cel("Viernes 21"), cel("Sabado 22"), cel("Domingo 23"),
+         cel(), cel(), cel("Compensatorio"), cel(), cel(), cel(),
+         cel("Almuerzo"), cel("Desde"), cel("Hasta")),
+    fila(cel(), cel("1 Turno 8:00am a 4:00pm, Sábado 8:00am a 3:00pm"),
+         cel(), cel("Gisela"), cel("Gisela"), cel("Gisela"), cel("Gisela"), cel("Gisela"), cel("Gisela"),
+         cel(), cel(), cel("CC Tesoro"), cel(), cel(), cel(),
+         cel("1 Turno"), cel("12:00 pm"), cel("1:00 pm")),
+    fila(cel(), cel(), cel(), cel("Jennifer"), cel("Jennifer"), cel("Jennifer"),
+         cel("Jennifer"), cel("Jennifer"), cel("Elvia*"),
+         cel(), cel(), cel(), cel(), cel(), cel(),
+         cel("2 Turno"), cel("1:00 pm"), cel("2:00 pm")),
+    fila(cel(), cel(), cel(), cel("Natalia"), cel("Natalia"), cel("Natalia"),
+         cel("Natalia"), cel("Natalia"), cel("Laura"),
+         cel(), cel(), cel(), cel(), cel(), cel(),
+         cel("3 Turno"), cel("6:00 pm"), cel("6:20 pm")),
+    fila(),
+    fila(cel(), cel("2 Turno 11:00am a 7:00pm, Sábado 10:00am a 5:00pm"),
+         cel("Estefania"), cel("Estefania"), cel("Estefania"), cel("Estefania"),
+         cel("Estefania"), cel("Estefania")),
+    fila(),
+    fila(cel(), cel("3 Turno 2:00pm a 9:00pm, Sábado 11:00am a 6:00pm"), cel(),
+         cel("Cristian*"), cel("Cristian*"), cel("Cristian*"), cel("Cristian*"), cel("Cristian*")),
+]
+META_ALMUERZO_JUNTO = {"sheets": [{"data": [{"rowData": FILAS_ALMUERZO_JUNTO}]}]}
+h_aj = turnos.parsear_horario(META_ALMUERZO_JUNTO)
+chk("error" not in h_aj, f"Almuerzo al lado del cuadro: parsea sin error ({h_aj.get('error', '')})")
+turno1_aj = {a["nombre"] for a in h_aj.get("asignaciones", []) if a["turno"] == 1}
+chk({"Gisela", "Jennifer", "Elvia", "Natalia", "Laura"} <= turno1_aj,
+    f"Turno 1 no se corta por la tabla de Almuerzo al lado (mismas filas): {sorted(turno1_aj)}")
+chk(h_aj.get("almuerzos") == {1: (12.0, 13.0), 2: (13.0, 14.0), 3: (18.0, 18.0 + 20 / 60)},
+    f"La tabla de Almuerzo al lado se sigue leyendo bien pese al cambio: {h_aj.get('almuerzos')}")
+
 print("\nRESULTADO:", "[X] HAY FALLOS" if fallos else "[OK] TODO CORRECTO")
 sys.exit(1 if fallos else 0)

@@ -151,22 +151,28 @@ def _hora_simple_a_decimal(texto):
 
 
 def _parsear_almuerzo(grid):
-    """Tabla aparte 'Almuerzo | Desde | Hasta', una fila por turno (debajo de
-    la leyenda). Devuelve {turno: (inicio_decimal, fin_decimal)}; vacío si la
-    tabla no está en la hoja (se usa el respaldo ALMUERZOS)."""
-    fila_ini = None
+    """Tabla aparte 'Almuerzo | Desde | Hasta', una fila por turno. Puede estar
+    debajo de todo el cuadro o al lado (mismas filas que la gente de turno 1) —
+    se ubica la columna real de "Almuerzo" en vez de asumir que es la 0, para
+    no perder la tabla cuando la jefa la reacomoda a la derecha.
+    Devuelve {turno: (inicio_decimal, fin_decimal)}; vacío si la tabla no está
+    en la hoja (se usa el respaldo ALMUERZOS)."""
+    fila_ini = col_ini = None
     for r, fila in enumerate(grid):
-        if any(_norm(t).startswith("almuerzo") for t, _ in fila):
-            fila_ini = r
+        for c, (t, _bg) in enumerate(fila):
+            if _norm(t).startswith("almuerzo"):
+                fila_ini, col_ini = r, c
+                break
+        if fila_ini is not None:
             break
     if fila_ini is None:
         return {}
     almuerzos = {}
     for r in range(fila_ini + 1, len(grid)):
-        textos = [t for t, _ in grid[r]]
+        textos = [t for t, _ in grid[r][col_ini:col_ini + 3]]
         if not any(textos):
             continue
-        m = re.search(r"(\d+)\s*turno", _norm(textos[0]))
+        m = re.search(r"(\d+)\s*turno", _norm(textos[0])) if textos else None
         if not m:
             break  # se acabó la tabla
         desde = _hora_simple_a_decimal(textos[1]) if len(textos) > 1 else None
@@ -248,14 +254,20 @@ def parsear_horario(meta, gid=None):
             break
 
     # --- 4) Bloques de turno ---
+    # El rótulo del bloque ("1 Turno 8:00am a 4:00pm...") siempre vive en la
+    # columna justo antes de que empiecen los días (col_dia). Buscar en TODA
+    # la fila es un error: la tabla de Almuerzo usa "1 Turno"/"2 Turno" como
+    # clave y, si la jefa la ubica al lado del cuadro (mismas filas que la
+    # gente), esas celdas se confunden con el inicio de un bloque nuevo y
+    # cortan el turno 1 en solo una fila.
+    col_marca = min(col_dia) - 1
     marcas = []   # (fila, numero_turno, texto)
     for r in range(fila_encabezado + 1, fila_fin_cuadro):
-        for texto, _bg in grid[r]:
-            m = re.search(r"(\d+)\s*turno|turno\s*:?\s*(\d+)", _norm(texto))
-            if m:
-                num = int(m.group(1) or m.group(2))
-                marcas.append((r, num, texto))
-                break
+        texto, _bg = celda(r, col_marca)
+        m = re.search(r"(\d+)\s*turno|turno\s*:?\s*(\d+)", _norm(texto))
+        if m:
+            num = int(m.group(1) or m.group(2))
+            marcas.append((r, num, texto))
     if not marcas:
         return {"error": "No se encontraron bloques de turno ('1 Turno …')."}
 

@@ -175,10 +175,17 @@ Si ninguno de los dos mecanismos aplica, se asume que la persona es cubrible
 
 ### Tabla de almuerzo (opcional)
 
-Debajo de la leyenda, una tabla `Almuerzo | Desde | Hasta` con una fila por
-turno (`1 Turno`, `2 Turno`, `3 Turno`) y sus horas. Si no está, se usa el
-respaldo por código (`core/turnos.py` → `ALMUERZOS`). Ver más abajo cómo se
-aplica automáticamente.
+Una tabla `Almuerzo | Desde | Hasta` con una fila por turno (`1 Turno`,
+`2 Turno`, `3 Turno`) y sus horas — debajo de la leyenda, o **al lado** del
+cuadro (en las mismas filas que la gente de turno 1, como quedó en agosto de
+2026): el programa ubica la columna real donde está escrito "Almuerzo" en
+vez de asumir una posición fija, así que ambas formas funcionan igual. El
+rótulo `1 Turno`/`2 Turno`/`3 Turno` de esta tabla **nunca cuenta como un
+bloque de turno nuevo**, aunque quede en las mismas filas que el turno 1: el
+programa solo busca el rótulo del bloque en la columna justo antes de que
+empiecen los días. Si la tabla no está en la hoja, se usa el respaldo por
+código (`core/turnos.py` → `ALMUERZOS`). Ver más abajo cómo se aplica
+automáticamente.
 
 ---
 
