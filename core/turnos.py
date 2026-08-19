@@ -188,6 +188,30 @@ def _parsear_almuerzo(grid):
     return almuerzos
 
 
+def _parsear_vacaciones(grid):
+    """Columna aparte 'Vacaciones': un nombre por fila, debajo del rótulo, en
+    cualquier columna de la hoja. Devuelve la lista de nombres tal cual están
+    escritos (sin normalizar) — vacía si la columna no está en la hoja."""
+    fila_ini = col_ini = None
+    for r, fila in enumerate(grid):
+        for c, (t, _bg) in enumerate(fila):
+            if _norm(t).startswith("vacacion"):
+                fila_ini, col_ini = r, c
+                break
+        if fila_ini is not None:
+            break
+    if fila_ini is None:
+        return []
+    nombres = []
+    for r in range(fila_ini + 1, len(grid)):
+        fila = grid[r]
+        texto = fila[col_ini][0] if col_ini < len(fila) else ""
+        if not texto:
+            break  # se acabó la lista
+        nombres.append(texto.strip())
+    return nombres
+
+
 def parsear_horario(meta, gid=None):
     """Convierte la respuesta de la API (con formato) en la estructura del
     horario. Separado de la descarga para poder probarlo sin red."""
@@ -325,6 +349,7 @@ def parsear_horario(meta, gid=None):
             "asignaciones": asignaciones,
             "roles": roles,
             "almuerzos": _parsear_almuerzo(grid),
+            "vacaciones": _parsear_vacaciones(grid),
             "estados_leyenda": sorted(set(leyenda.values()))}
 
 
@@ -358,7 +383,7 @@ def horario_desde_equipo(personas):
             })
     return {"exito": True, "turnos": dict(TURNOS),
             "asignaciones": asignaciones, "roles": roles,
-            "almuerzos": dict(ALMUERZOS),
+            "almuerzos": dict(ALMUERZOS), "vacaciones": [],
             "estados_leyenda": [], "fuente": "equipo"}
 
 
@@ -479,15 +504,20 @@ def calcular_cobertura(horario, ahora, presencia=None, estados=None,
 
     Listas que ve soporte:
       - requieren_cobertura: sin señal y SIN cobertura vigente → alarma roja.
-        Tiene tres momentos, con dos velocidades distintas:
+        Tiene cuatro momentos, con distintas velocidades:
           1) Durante su turno (o recién pasada la tolerancia al entrar): el
              más urgente — "Yo lo cubro" dura VENCIMIENTO_COBERTURA_MIN.
           2) Turno 2/3 ANTES de entrar, desde que abre el turno 1: puede
              haber chats de ayer sin revisar.
-          3) Cualquier turno DESPUÉS de terminar, mientras el día operativo
-             sigue: puede haber un cliente en proceso sin atender.
-        Los momentos 2 y 3 son menos urgentes que el 1 — mismo mecanismo de
-        "Yo lo cubro", pero dura VENCIMIENTO_PENDIENTES_MIN (más largo).
+          3) Cualquier turno DESPUÉS de terminar, o compensatorio/ausencia/
+             cambio de horario todo el día: puede haber un cliente en
+             proceso sin atender, mientras el día operativo siga.
+          4) Vacaciones (columna aparte en la hoja): manda sobre cualquier
+             otra cosa que diga el cuadro para esa persona.
+        Los momentos 2 y 3 usan "Yo lo cubro" con VENCIMIENTO_PENDIENTES_MIN
+        (más largo que el de "en turno", porque es menos urgente). Vacaciones
+        es distinto: se revisa UNA VEZ AL DÍA (se reinicia a medianoche, no
+        cada cierto número de minutos).
       - ausencia_informada:  en turno con estado (almuerzo…) o novedad; O
         sin señal en turno pero YA con "Yo lo cubro" vigente
         (< VENCIMIENTO_COBERTURA_MIN). Si la cobertura vence y sigue sin
@@ -496,10 +526,11 @@ def calcular_cobertura(horario, ahora, presencia=None, estados=None,
       - por_entrar:          aún dentro de la tolerancia — nunca es urgente,
         se puede cubrir de forma preventiva pero no expira ni alarma. Turno
         2/3 con "Yo lo cubro" vigente de pendientes de ayer también cae acá.
-      - no_se_espera:        compensatorio / ausencia / cambio de horario; y
-        cualquier turno terminado con "Yo lo cubro" vigente de pendientes
-        (< VENCIMIENTO_PENDIENTES_MIN) — si vence y sigue sin señal, vuelve
-        a "Requieren cobertura" en vez de quedarse tranquilo para siempre.
+      - no_se_espera:        compensatorio / ausencia / cambio de horario /
+        turno terminado / vacaciones, todos con "Yo lo cubro" vigente — si
+        vence (o, en vacaciones, cuando pasa la medianoche) y sigue sin
+        señal, vuelve a "Requieren cobertura" en vez de quedarse tranquilo
+        para siempre.
     """
     presencia = presencia or {}
     estados = estados or {}
@@ -523,6 +554,27 @@ def calcular_cobertura(horario, ahora, presencia=None, estados=None,
     # haber chats de ayer sin revisar esperando a los de turno 2/3.
     apertura_dia = _turnos_hoy.get(1, TURNOS[1]).get(clave_dia, TURNOS[1]["sem"])[0]
 
+    vacaciones_set = {_norm(n) for n in horario.get("vacaciones", []) if _norm(n)}
+
+    def _procesar_vacacion(item, rol, cob):
+        """Vacaciones: informativo (Hoy no se espera), pero pide revisar
+        pendientes UNA VEZ AL DÍA — se reinicia a medianoche, no cada cierto
+        número de minutos como el resto de "pendientes"."""
+        item["vacaciones"] = True
+        item["etiqueta"] = "Vacaciones"
+        if not _rol_cubrible(rol):
+            res["no_se_espera"].append(item)
+            return
+        vigente_hoy = bool(cob) and datetime.fromtimestamp(cob["desde"]).date() == ahora.date()
+        if vigente_hoy:
+            item["estado_etq"] = "Vacaciones — ya revisado hoy"
+            res["no_se_espera"].append(item)
+        else:
+            item["cubierto_por"] = None
+            item["cubierto_desde"] = None
+            item["motivo"] = "está de vacaciones — revisar si tiene clientes pendientes de reasignar"
+            res["requieren_cobertura"].append(item)
+
     res = {"requieren_cobertura": [], "ausencia_informada": [], "en_linea": [],
            "por_entrar": [], "no_se_espera": [], "novedades": novedades,
            "ajustes": sorted(ajustes.values(), key=lambda x: x.get("ts", 0)),
@@ -539,6 +591,20 @@ def calcular_cobertura(horario, ahora, presencia=None, estados=None,
     for a in asignaciones_hoy:
         k = _norm(a["nombre"])
         rol = roles.get(k, "")
+
+        # Vacaciones manda sobre cualquier otra cosa que diga el cuadro para
+        # esta persona (turno normal, compensatorio, lo que sea).
+        if k in vacaciones_set:
+            item = {"nombre": a["nombre"], "turno": a["turno"], "rol": rol,
+                    "estado_horario": "vacaciones", "etiqueta": "Vacaciones",
+                    "desde": "", "hasta": ""}
+            cob = coberturas.get(k)
+            if cob:
+                item["cubierto_por"] = cob.get("soporte")
+                item["cubierto_desde"] = cob.get("desde_hora")
+            _procesar_vacacion(item, rol, cob)
+            continue
+
         info = ESTADOS.get(a["estado"], ESTADOS["normal"])
         ventana = (horario.get("turnos", {}).get(a["turno"])
                    or TURNOS.get(a["turno"], TURNOS[1]))
@@ -561,7 +627,23 @@ def calcular_cobertura(horario, ahora, presencia=None, estados=None,
             item["cubierto_desde"] = cob.get("desde_hora")
 
         if not info["cubrir"]:
-            res["no_se_espera"].append(item)
+            # Compensatorio/Ausencia/Cambio de horario: no viene hoy, pero
+            # puede tener un cliente en proceso sin atender — mismo ciclo de
+            # 2.5h que "turno terminado" (ver más abajo), no es informativo
+            # puro: si nadie confirma, sí pide revisión.
+            item["no_viene_hoy"] = True
+            if not _rol_cubrible(rol):
+                res["no_se_espera"].append(item)
+                continue
+            vigente_pend = bool(cob) and (time.time() - cob["desde"]) / 60.0 <= VENCIMIENTO_PENDIENTES_MIN
+            if vigente_pend:
+                item["estado_etq"] = "Pendientes ya revisados"
+                res["no_se_espera"].append(item)
+            else:
+                item["cubierto_por"] = None
+                item["cubierto_desde"] = None
+                item["motivo"] = f"{info['etiqueta']} hoy, puede tener clientes en proceso sin atender"
+                res["requieren_cobertura"].append(item)
             continue
 
         # Turno 2/3, antes de entrar hoy, con el turno 1 ya abierto: puede
@@ -693,6 +775,23 @@ def calcular_cobertura(horario, ahora, presencia=None, estados=None,
             item["cubierto_desde"] = None
             item["motivo"] = motivo
             res["requieren_cobertura"].append(item)
+
+    # Vacaciones sin ninguna fila en el cuadro esta semana (persona que solo
+    # vive en esta lista, no tiene turno asignado): igual se procesa.
+    nombres_procesados_hoy = {_norm(a["nombre"]) for a in asignaciones_hoy}
+    for nombre_original in horario.get("vacaciones", []):
+        k = _norm(nombre_original)
+        if not k or k in nombres_procesados_hoy:
+            continue
+        rol = roles.get(k, "")
+        item = {"nombre": nombre_original, "turno": 0, "rol": rol,
+                "estado_horario": "vacaciones", "etiqueta": "Vacaciones",
+                "desde": "", "hasta": ""}
+        cob = coberturas.get(k)
+        if cob:
+            item["cubierto_por"] = cob.get("soporte")
+            item["cubierto_desde"] = cob.get("desde_hora")
+        _procesar_vacacion(item, rol, cob)
 
     res["requieren_cobertura"].sort(key=lambda x: (bool(x.get("cubierto_por")), x["turno"], x["nombre"]))
     res["ausencia_informada"].sort(key=lambda x: (bool(x.get("cubierto_por")), x["nombre"]))

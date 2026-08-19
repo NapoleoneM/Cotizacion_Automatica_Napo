@@ -142,6 +142,9 @@ chk(not (nombres & basura),
 chk(h.get("almuerzos") == {1: (12.0, 13.0), 2: (13.0, 14.0), 3: (18.0, 18.0 + 20 / 60)},
     f"Lee la tabla de Almuerzo (Desde/Hasta por turno): {h.get('almuerzos')}")
 
+chk(h.get("vacaciones") == [],
+    f"Cuadro sin columna 'Vacaciones' -> lista vacía, no revienta: {h.get('vacaciones')}")
+
 # =====================================================
 # 1b) Semana calculada sola (ya no se lee de la hoja)
 # =====================================================
@@ -229,13 +232,21 @@ item = [x for x in c3["requieren_cobertura"] if x["nombre"] == "Estefania"]
 chk(bool(item) and "45 min" in item[0]["motivo"],
     f"Señal de hace 45 min -> cobertura con motivo: {item[0]['motivo'] if item else None}")
 
-# Miércoles: Ximena en compensatorio no se espera
+# Miércoles: Ximena en compensatorio — igual que turno terminado, puede
+# tener un cliente en proceso: sin cobertura, pide revisión cada 2.5h.
 MIER = datetime(2026, 7, 29, 9, 0)
 c4 = turnos.calcular_cobertura(h, MIER)
-chk("Ximena" not in {x["nombre"] for x in c4["requieren_cobertura"]},
-    "Miércoles: Ximena (Compensatorio) NO se pide cubrir")
-chk("Ximena" in {x["nombre"] for x in c4["no_se_espera"]},
-    "Miércoles: Ximena aparece en 'no se espera' con su etiqueta")
+ximena_roja = [x for x in c4["requieren_cobertura"] if x["nombre"] == "Ximena"]
+chk(bool(ximena_roja) and ximena_roja[0].get("no_viene_hoy") is True,
+    f"Miércoles: Ximena (Compensatorio) SIN cobertura -> Requieren cobertura: {ximena_roja}")
+
+cob_ximena = {turnos.clave("Ximena"): {"soporte": "Cristian", "desde": time.time() - 30 * 60,
+                                        "desde_hora": "8:45 AM"}}
+c4b = turnos.calcular_cobertura(h, MIER, coberturas=cob_ximena)
+chk("Ximena" in {x["nombre"] for x in c4b["no_se_espera"]},
+    "Miércoles: Ximena (Compensatorio) CON cobertura vigente -> 'no se espera' con su etiqueta")
+chk("Ximena" not in {x["nombre"] for x in c4b["requieren_cobertura"]},
+    "Miércoles: Ximena (Compensatorio) con cobertura vigente ya no está en Requieren cobertura")
 
 # Miércoles 1:00pm: Gisela en Tesoro (turno 2, 11am-7pm) -> ausencia informada
 # con sede=True, NO alarma roja y NO "no se espera" (sigue trabajando, solo
@@ -434,15 +445,15 @@ FILAS_ALMUERZO_JUNTO = [
     fila(cel(), cel(), cel("Lunes 17"), cel("Martes 18"), cel("Miercoles 19"),
          cel("Jueves 20"), cel("Viernes 21"), cel("Sabado 22"), cel("Domingo 23"),
          cel(), cel(), cel("Compensatorio"), cel(), cel(), cel(),
-         cel("Almuerzo"), cel("Desde"), cel("Hasta")),
+         cel("Almuerzo"), cel("Desde"), cel("Hasta"), cel(), cel("Vacaciones")),
     fila(cel(), cel("1 Turno 8:00am a 4:00pm, Sábado 8:00am a 3:00pm"),
          cel(), cel("Gisela"), cel("Gisela"), cel("Gisela"), cel("Gisela"), cel("Gisela"), cel("Gisela"),
          cel(), cel(), cel("CC Tesoro"), cel(), cel(), cel(),
-         cel("1 Turno"), cel("12:00 pm"), cel("1:00 pm")),
+         cel("1 Turno"), cel("12:00 pm"), cel("1:00 pm"), cel(), cel("Jennifer")),
     fila(cel(), cel(), cel(), cel("Jennifer"), cel("Jennifer"), cel("Jennifer"),
          cel("Jennifer"), cel("Jennifer"), cel("Elvia*"),
          cel(), cel(), cel(), cel(), cel(), cel(),
-         cel("2 Turno"), cel("1:00 pm"), cel("2:00 pm")),
+         cel("2 Turno"), cel("1:00 pm"), cel("2:00 pm"), cel(), cel("Roberto")),
     fila(cel(), cel(), cel(), cel("Natalia"), cel("Natalia"), cel("Natalia"),
          cel("Natalia"), cel("Natalia"), cel("Laura"),
          cel(), cel(), cel(), cel(), cel(), cel(),
@@ -463,6 +474,46 @@ chk({"Gisela", "Jennifer", "Elvia", "Natalia", "Laura"} <= turno1_aj,
     f"Turno 1 no se corta por la tabla de Almuerzo al lado (mismas filas): {sorted(turno1_aj)}")
 chk(h_aj.get("almuerzos") == {1: (12.0, 13.0), 2: (13.0, 14.0), 3: (18.0, 18.0 + 20 / 60)},
     f"La tabla de Almuerzo al lado se sigue leyendo bien pese al cambio: {h_aj.get('almuerzos')}")
+chk(h_aj.get("vacaciones") == ["Jennifer", "Roberto"],
+    f"Lee la columna 'Vacaciones' (nombre por fila, en cualquier columna): {h_aj.get('vacaciones')}")
+
+# =====================================================
+# Vacaciones: manda sobre cualquier otra cosa del cuadro (Jennifer SÍ tiene
+# turno 1 asignado esta semana) y también funciona para alguien que no tiene
+# ninguna fila en el cuadro (Roberto). Informativo en "Hoy no se espera",
+# pero pide revisión UNA VEZ AL DÍA en "Requieren cobertura" — se reinicia a
+# medianoche, no cada cierto número de minutos.
+# =====================================================
+MIER_VAC = datetime(2026, 8, 19, 10, 0)   # miércoles, en horas de turno 1
+
+c_jen = turnos.calcular_cobertura(h_aj, MIER_VAC)
+jen_roja = [x for x in c_jen["requieren_cobertura"] if x["nombre"] == "Jennifer"]
+chk(bool(jen_roja) and jen_roja[0].get("vacaciones") is True,
+    f"Jennifer (turno 1 esta semana, pero de vacaciones) -> Requieren cobertura: {jen_roja}")
+rob_roja = [x for x in c_jen["requieren_cobertura"] if x["nombre"] == "Roberto"]
+chk(bool(rob_roja) and rob_roja[0].get("vacaciones") is True,
+    f"Roberto (sin ninguna fila en el cuadro, solo en Vacaciones) -> Requieren cobertura: {rob_roja}")
+chk(all(x["turno"] != 1 or x["nombre"] != "Jennifer" for x in c_jen["por_entrar"] + c_jen["ausencia_informada"] + c_jen["en_linea"]),
+    "Jennifer de vacaciones no aparece en ninguna lista de turno normal")
+
+# Con "Yo lo cubro" de HOY (aunque haga rato): tranquila el resto del día.
+cob_hoy = {turnos.clave("Jennifer"): {"soporte": "Cristian", "desde": MIER_VAC.timestamp() - 3 * 3600,
+                                       "desde_hora": "7:00 AM"}}
+c_jen2 = turnos.calcular_cobertura(h_aj, MIER_VAC, coberturas=cob_hoy)
+jen_ns = [x for x in c_jen2["no_se_espera"] if x["nombre"] == "Jennifer"]
+chk(bool(jen_ns) and jen_ns[0].get("cubierto_por") == "Cristian",
+    f"Vacaciones con 'Yo lo cubro' de hoy: tranquila en 'Hoy no se espera' el resto del día: {jen_ns}")
+chk("Jennifer" not in {x["nombre"] for x in c_jen2["requieren_cobertura"]},
+    "Con revisión de hoy ya hecha, Jennifer no está en Requieren cobertura")
+
+# Con "Yo lo cubro" de AYER (aunque sea reciente en minutos): vuelve a sonar
+# hoy — el ciclo se reinicia a medianoche, no a las X horas.
+AYER_9PM = datetime(2026, 8, 18, 21, 0)
+cob_ayer = {turnos.clave("Jennifer"): {"soporte": "Cristian", "desde": AYER_9PM.timestamp(),
+                                        "desde_hora": "9:00 PM (ayer)"}}
+c_jen3 = turnos.calcular_cobertura(h_aj, MIER_VAC, coberturas=cob_ayer)
+jen_roja3 = [x for x in c_jen3["requieren_cobertura"] if x["nombre"] == "Jennifer"]
+chk(bool(jen_roja3), f"Vacaciones: la revisión de ayer no cuenta hoy, vuelve a pedir: {jen_roja3}")
 
 # =====================================================
 # Auditoría: si la palabra "Almuerzo" cae en una fila que TODAVÍA tiene gente

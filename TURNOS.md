@@ -189,6 +189,19 @@ empiecen los días. Si la tabla no está en la hoja, se usa el respaldo por
 código (`core/turnos.py` → `ALMUERZOS`). Ver más abajo cómo se aplica
 automáticamente.
 
+### Columna opcional `Vacaciones`
+
+Una lista de nombres, uno por fila, debajo del rótulo `Vacaciones` — en
+cualquier columna de la hoja (hoy vive en la columna T, al lado de la tabla
+de Almuerzo). El programa ubica la columna real igual que con "Almuerzo", así
+que se puede mover sin romper nada. Quien esté en esta lista **manda sobre
+cualquier otra cosa** que diga el cuadro para esa persona (turno normal,
+compensatorio, lo que sea) — no hace falta quitarla del cuadro para ponerla
+en vacaciones, ni tampoco hace falta que tenga fila en el cuadro para
+aparecer aquí (alguien que ya no está en el horario semanal, pero sigue de
+vacaciones, funciona igual). Ver "Vacaciones" más abajo para el
+comportamiento en el panel.
+
 ---
 
 ## Estados del asesor
@@ -260,6 +273,9 @@ tampoco se olvida):
   termina su turno y hasta el **cierre del día** (la hora más tardía entre
   los 3 turnos), puede tener un cliente en proceso sin atender. (Turno 3 no
   suele tener margen acá — termina justo al cierre.)
+- **Compensatorio, Ausencia o Cambio de horario** (color de la leyenda en la
+  hoja): mismo ciclo todo el día — no viene, pero igual puede tener un
+  cliente en proceso sin atender.
 
 En ambos casos, cada **2 horas y media** (`VENCIMIENTO_PENDIENTES_MIN`) sin
 que soporte confirme con **"Yo lo cubro"**, aparece en **"Requieren
@@ -277,6 +293,21 @@ cierre a las 9pm), el resultado práctico es: turno 2/3 revisados desde las
 8am hasta que entran; turno 1 revisado desde las 4pm; turno 2 revisado de
 nuevo desde las 7pm — todo hasta las 9pm, hora en la que deja de rastrearse
 cualquier cosa hasta que abra el turno 1 del día siguiente.
+
+### Vacaciones
+
+Quien esté en la columna `Vacaciones` de la hoja (ver más arriba) no cuenta
+como "no viene hoy y ya" — puede tener clientes en proceso que alguien más
+debe hacerse cargo de reasignar. Manda sobre cualquier otra cosa que diga el
+cuadro para esa persona (turno normal, compensatorio, lo que sea), y funciona
+igual tenga o no una fila en el cuadro esta semana.
+
+A diferencia de "Pendientes de clientes" (que se revisa cada 2.5 horas), acá
+el aviso es **una vez al día**: en cuanto soporte confirma con "Yo lo cubro",
+la persona queda tranquila en "Hoy no se espera" el resto de **ese día
+calendario** — sin importar la hora en que se confirmó. A la medianoche se
+reinicia solo, y al día siguiente vuelve a pedir una revisión mientras la
+persona siga en la lista de Vacaciones.
 
 ### Desconectado automático al cerrar
 

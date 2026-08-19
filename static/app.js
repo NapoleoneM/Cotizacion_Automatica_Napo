@@ -626,7 +626,7 @@ function renderPanel(d) {
     // El motivo de "turno terminado" y "pendientes de ayer" ya son frases
     // completas; no repetir la hora de entrada delante (quedaría "empezó
     // 8am · terminó a las 4pm", o "empezó 11am · entra a las 11am...").
-    const det = (x.turno_terminado || x.pendientes_ayer)
+    const det = (x.turno_terminado || x.pendientes_ayer || x.no_viene_hoy || x.vacaciones)
       ? x.motivo : `su turno empezó ${x.desde} · ${x.motivo}`;
     d2.append(el("span", "det", det));
     d2.append(botonCubrir(x));
@@ -736,11 +736,11 @@ function renderPanel(d) {
 
   pintarLista($("#lista-nospera"), d.no_se_espera, x => {
     const d2 = itemBase(x, "");
-    // Compensatorio/Ausencia/Cambio de horario no llevan nada más — solo el
-    // caso de "turno terminado" trae esta info adicional, y el botón para que
-    // soporte se adelante a cubrir (voluntario, no obligatorio ni con alarma).
-    if (x.turno_terminado) {
-      d2.append(el("span", "det", x.estado_etq || "Turno terminado"));
+    // Todos los casos "tranquilos por ahora" (turno terminado, no viene hoy,
+    // vacaciones) muestran cuándo se revisó y el botón para revisar de nuevo
+    // antes de que venza — el resto (Aún no entra por horario normal) no.
+    if (x.turno_terminado || x.no_viene_hoy || x.vacaciones) {
+      d2.append(el("span", "det", x.estado_etq || "Pendientes ya revisados"));
       d2.append(botonCubrir(x));
     }
     return d2;
