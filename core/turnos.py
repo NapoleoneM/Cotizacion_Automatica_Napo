@@ -247,8 +247,15 @@ def parsear_horario(meta, gid=None):
     # así que no basta con buscar solo ese texto — la tabla de Almuerzo es
     # el límite más confiable porque siempre tiene que estar para que la
     # app lea las horas.
+    # Una fila que todavía tiene gente asignada en las columnas de los días
+    # NUNCA es el límite, aunque en otra columna de esa misma fila (más a la
+    # derecha) diga "Almuerzo" o "Leyenda" — ese es justo el caso real de la
+    # tabla de Almuerzo puesta al lado del turno 1. Solo cuenta como límite
+    # una fila donde ya no queda nadie del cuadro.
     fila_fin_cuadro = len(grid)
     for r in range(fila_encabezado + 1, len(grid)):
+        if any(celda(r, c)[0] for c in col_dia):
+            continue
         if any(_norm(t).startswith(("leyenda", "almuerzo")) for t, _ in grid[r]):
             fila_fin_cuadro = r
             break
@@ -454,7 +461,15 @@ def _ts_hoy(ahora, hora_decimal):
 def calcular_cobertura(horario, ahora, presencia=None, estados=None,
                        novedades=None, coberturas=None, ajustes=None):
     """Cruza el horario del día con la realidad (señal, estado, novedades) y la
-    hora actual. Función pura: no toca red ni disco, se prueba con cualquier hora.
+    hora actual. No toca red ni disco, y la ventana de turno se prueba con
+    cualquier valor de `ahora` — OJO: los "minutos sin señal" y el vencimiento
+    de "Yo lo cubro" (90 min) sí usan el reloj real del proceso (`time.time()`),
+    no `ahora`, porque el único llamador real (`app.py`) siempre los pasa
+    sincronizados. Una prueba que fije `ahora` lejos de la fecha real, o un
+    futuro modo de recálculo histórico con hora simulada, dará esos dos datos
+    incoherentes con la ventana de turno — no es un bug hoy, pero es la razón
+    por la que las pruebas de este archivo también calculan sus timestamps de
+    presencia/cobertura con `time.time()`, no relativos a `ahora`.
 
     Listas que ve soporte:
       - requieren_cobertura: sin señal y SIN cobertura vigente → alarma roja.
@@ -678,12 +693,15 @@ def obtener_horario(ruta_credenciales):
             return res
 
         # Roles: la hoja opcional 'Roles' se SUMA a los detectados por "*" en
-        # el nombre (no los reemplaza) — así conviven ambos mecanismos.
+        # el nombre (no los reemplaza) — así conviven ambos mecanismos. Por
+        # eso es setdefault y no update: si el "*" ya dijo Soporte, una fila
+        # vieja o mal tipeada en la hoja Roles no debe pisarlo.
         try:
             meta_r = ss.fetch_sheet_metadata(params={
                 "includeGridData": "true", "ranges": f"'{_HOJA_ROLES}'!A1:C60",
             })
-            res["roles"].update(parsear_roles(meta_r))
+            for k, v in parsear_roles(meta_r).items():
+                res["roles"].setdefault(k, v)
         except Exception:
             pass
 

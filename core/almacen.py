@@ -466,6 +466,14 @@ def registrar_alertas_activas(nombres_activos):
     f, ahora = hoy(), time.time()
     activos = {clave(n): n for n in (nombres_activos or []) if clave(n)}
     with _con() as cx:
+        # Episodios de un día anterior que nunca se cerraron (nadie volvió a
+        # abrir el panel ese día antes de medianoche): sin una hora de cierre
+        # real, cuentan 0 minutos — preferible a dejarlos con ts_fin NULL para
+        # siempre, que hace que minutos_sin_cobertura() los lea distinto según
+        # cuándo se consulte (mientras "hoy" seguía siendo ese día sí sumaban
+        # tiempo real; en cuanto avanza la fecha, se leen como si no hubieran
+        # pasado nada, y ese cambio de lectura es el bug real, no el 0 en sí).
+        cx.execute("UPDATE alertas SET ts_fin = ts_inicio WHERE fecha != ? AND ts_fin IS NULL", (f,))
         abiertas = {r["clave"]: r["id"] for r in cx.execute(
             "SELECT id, clave FROM alertas WHERE fecha=? AND ts_fin IS NULL", (f,)).fetchall()}
         for k, n in activos.items():
@@ -595,7 +603,7 @@ def resumen(desde, hasta):
             WHERE fecha BETWEEN ? AND ? AND activa=1
         """, (desde, hasta)).fetchall()
         cobs = cx.execute("""
-            SELECT clave_titular, titular, soporte, desde, hasta FROM coberturas
+            SELECT clave_titular, titular, soporte, desde, hasta, fecha FROM coberturas
             WHERE fecha BETWEEN ? AND ?
         """, (desde, hasta)).fetchall()
 
@@ -621,10 +629,20 @@ def resumen(desde, hasta):
         it["novedades"][r["tipo"]] = it["novedades"].get(r["tipo"], 0) + 1
         it["total_novedades"] += 1
 
+    hoy_txt = hoy()
     for r in cobs:
         it = item(r["clave_titular"], r["titular"])
         it["veces_cubierto"] += 1
-        fin = r["hasta"] or time.time()
+        # Si nunca se liberó (a alguien se le olvidó "dejar de cubrir"), solo
+        # se cuenta hasta ahora mientras sea de HOY — de lo contrario, cada
+        # vez que se abre este resumen la cifra seguiría creciendo contra el
+        # reloj actual para una cobertura de hace semanas. Ver minutos_por_estado.
+        if r["hasta"] is not None:
+            fin = r["hasta"]
+        elif r["fecha"] == hoy_txt:
+            fin = time.time()
+        else:
+            fin = r["desde"]
         it["minutos_cubierto"] += max(0, int((fin - r["desde"]) / 60))
         sop = item(clave(r["soporte"]), r["soporte"])
         sop["veces_cubriendo"] += 1

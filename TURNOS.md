@@ -288,6 +288,11 @@ panel: agregar, cambiar rol/turno, y quitar con la ✕. Quitar **desactiva** (no
 borra) para que el historial siga teniendo sentido; el mismo botón (↺) la vuelve
 a activar si regresa.
 
+El rol que se le asigna aquí (ej. "Venta presencial") pesa igual que el `*`/la
+hoja "Roles" para decidir si a esa persona se le pide cobertura — no es solo
+para el resumen de Gestión. El `*`/la hoja mandan si dicen algo; si no, se usa
+el rol de Equipo.
+
 ## "Yo lo cubro"
 
 En cada persona por cubrir hay un botón **Yo lo cubro** — **solo visible para

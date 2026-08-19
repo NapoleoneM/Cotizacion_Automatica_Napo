@@ -542,24 +542,34 @@ function esSoporteYo() {
 // Botón para que soporte se adjudique la cobertura (o la libere). Evita que dos
 // personas entren a la misma cuenta y deja el registro de quién cubrió. Solo
 // soporte lo ve — el resto solo ve quién está cubriendo, sin poder tocarlo.
+// Evita que un doble-clic (conexión lenta, clic nervioso) mande la misma
+// acción dos veces: deshabilita el botón mientras la petición está en curso.
+function alClic(b, fn) {
+  b.onclick = async () => {
+    if (b.disabled) return;
+    b.disabled = true;
+    try { await fn(); } finally { b.disabled = false; }
+  };
+}
+
 function botonCubrir(x) {
   const cont = el("div", "panel-cubrir");
   if (x.cubierto_por) {
     cont.append(el("span", "cubre-txt", `cubre ${x.cubierto_por} desde ${x.cubierto_desde || ""}`));
     if (esSoporteYo()) {
       const b = el("button", "panel-mini", "liberar");
-      b.onclick = async () => {
+      alClic(b, async () => {
         await fetch("/api/turnos/cubrir/cerrar", {
           method: "POST", headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ titular: x.nombre }),
         });
         cargarTurnos();
-      };
+      });
       cont.append(b);
     }
   } else if (esSoporteYo()) {
     const b = el("button", "panel-mini oro", "Yo lo cubro");
-    b.onclick = async () => {
+    alClic(b, async () => {
       const yo = yoNombre();
       if (!yo) { alert("Primero elige tu nombre en 'Soy:'"); return; }
       await fetch("/api/turnos/cubrir", {
@@ -567,7 +577,7 @@ function botonCubrir(x) {
         body: JSON.stringify({ titular: x.nombre, soporte: yo }),
       });
       cargarTurnos();
-    };
+    });
     cont.append(b);
   }
   return cont;
@@ -595,11 +605,18 @@ function renderPanel(d) {
   $("#n-aus").textContent = aus.length ? `(${aus.length})` : "";
   $("#n-linea").textContent = (d.en_linea || []).length ? `(${d.en_linea.length})` : "";
 
-  // Estados posibles en el selector "Estoy:"
+  // Estados posibles en el selector "Estoy:" — se compara la firma para que,
+  // si la jefa cambia la lista, quien ya tenía el panel abierto la vea sin
+  // tener que recargar la página (antes solo se llenaba una vez, la primera).
   const selEst = $("#mi-estado");
-  if ((d.estados_posibles || []).length && selEst.options.length === 0) {
+  const firmaEst = (d.estados_posibles || []).map(e => e.clave).join("|");
+  if (selEst.dataset.firma !== firmaEst) {
+    const valorEst = selEst.value;
+    selEst.innerHTML = "";
     selEst.add(new Option("— elige tu estado —", ""));
-    d.estados_posibles.forEach(e => selEst.add(new Option(e.etiqueta, e.clave)));
+    (d.estados_posibles || []).forEach(e => selEst.add(new Option(e.etiqueta, e.clave)));
+    selEst.value = valorEst;
+    selEst.dataset.firma = firmaEst;
   }
   $("#fila-mi-estado").hidden = !yoNombre();
   actualizarBloqueo();
@@ -655,21 +672,31 @@ function renderPanel(d) {
     return it;
   });
 
-  // Tipos de ajuste en el formulario
+  // Tipos de ajuste en el formulario (misma comparación de firma que arriba)
   const selTipo = $("#aj-tipo");
-  if ((d.tipos_ajuste || []).length && selTipo.options.length === 0) {
-    d.tipos_ajuste.forEach(t => {
+  const firmaAjTipo = (d.tipos_ajuste || []).map(t => t.clave).join("|");
+  if (selTipo.dataset.firma !== firmaAjTipo) {
+    const valorAjTipo = selTipo.value;
+    selTipo.innerHTML = "";
+    (d.tipos_ajuste || []).forEach(t => {
       const o = new Option(t.etiqueta, t.clave);
       o.dataset.pide = t.pide || "";
       selTipo.add(o);
     });
+    selTipo.value = valorAjTipo;
+    selTipo.dataset.firma = firmaAjTipo;
     pintarCamposAjuste();
   }
 
   // Tipos de novedad en el formulario
   const selNov = $("#nov-tipo");
-  if ((d.tipos_novedad || []).length && selNov.options.length === 0) {
-    d.tipos_novedad.forEach(t => selNov.add(new Option(t, t)));
+  const firmaNov = (d.tipos_novedad || []).join("|");
+  if (selNov.dataset.firma !== firmaNov) {
+    const valorNov = selNov.value;
+    selNov.innerHTML = "";
+    (d.tipos_novedad || []).forEach(t => selNov.add(new Option(t, t)));
+    selNov.value = valorNov;
+    selNov.dataset.firma = firmaNov;
   }
 
   pintarLista($("#lista-novedades"), d.novedades, x => {
@@ -1069,7 +1096,7 @@ function iniciarPanelTurnos() {
     $("#form-ajuste").hidden = true;
     $("#aj-nota").value = ""; $("#aj-hora").value = "";
   };
-  $("#aj-guardar").onclick = async () => {
+  alClic($("#aj-guardar"), async () => {
     const nombre = $("#aj-nombre").value;
     if (!nombre) { $("#aj-nombre").focus(); return; }
     const o = $("#aj-tipo").selectedOptions[0];
@@ -1093,7 +1120,7 @@ function iniciarPanelTurnos() {
     $("#aj-nota").value = ""; $("#aj-hora").value = "";
     $("#form-ajuste").hidden = true;
     cargarTurnos();
-  };
+  });
 
   $("#btn-abrir-novedad").onclick = () => {
     const f = $("#form-novedad");
@@ -1101,7 +1128,7 @@ function iniciarPanelTurnos() {
     if (!f.hidden && !$("#nov-nombre").value) $("#nov-nombre").value = yoNombre();
   };
   $("#nov-cancelar").onclick = () => { $("#form-novedad").hidden = true; $("#nov-nota").value = ""; };
-  $("#nov-guardar").onclick = async () => {
+  alClic($("#nov-guardar"), async () => {
     const nombre = $("#nov-nombre").value;
     if (!nombre) { $("#nov-nombre").focus(); return; }
     await fetch("/api/turnos/novedad", {
@@ -1114,7 +1141,7 @@ function iniciarPanelTurnos() {
     $("#nov-nota").value = "";
     $("#form-novedad").hidden = true;
     cargarTurnos();
-  };
+  });
 
   // Presencia automática: al abrir la calculadora y luego cada pocos minutos.
   enviarPresencia();

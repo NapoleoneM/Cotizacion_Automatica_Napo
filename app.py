@@ -531,8 +531,19 @@ def api_turnos_estado():
                 "requieren_cobertura": [], "ausencia_informada": [], "en_linea": [],
                 "por_entrar": [], "no_se_espera": [],
                 "hora": datetime.now().strftime("%I:%M %p")}
+    # El rol de alguien registrado en el panel Equipo (ej. "Venta presencial")
+    # tiene que pesar en la alarma en vivo, no solo en el resumen histórico de
+    # gestión — si no, alguien marcado como no cubrible ahí puede seguir
+    # disparando "Requieren cobertura" porque el horario (hoja/asterisco) no
+    # sabe nada de ese rol. El "*"/hoja manda si dice algo; si no, se usa el
+    # rol de Equipo.
+    equipo = almacen.equipo()
+    roles = {p["clave"]: p["rol"] for p in equipo}
+    roles.update(horario.get("roles") or {})
+    horario_con_roles = {**horario, "roles": roles}
+
     datos = calcular_cobertura(
-        horario, datetime.now(),
+        horario_con_roles, datetime.now(),
         presencia=almacen.presencia_del_dia(),
         estados=almacen.estados_actuales(),
         novedades=novedades,
@@ -549,10 +560,7 @@ def api_turnos_estado():
     # se puede dar de alta a alguien (ej. una cuenta de pruebas) sin tocar la
     # hoja real de la jefa. Al no estar en las asignaciones del horario, no
     # entra en ninguna lista de cobertura: no interfiere con los asesores.
-    equipo = almacen.equipo()
     personas = sorted(set(personas_del_horario(horario)) | {p["nombre"] for p in equipo})
-    roles = {p["clave"]: p["rol"] for p in equipo}
-    roles.update(horario.get("roles") or {})
     datos.update(base, configurado=True, personas=personas,
                  fuente=horario.get("fuente", ""), roles=roles)
     return datos

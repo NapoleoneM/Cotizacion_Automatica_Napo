@@ -353,11 +353,12 @@ FILAS_SIN_LEYENDA = [
     fila(cel(), cel("3 Turno 2:00pm a 9:00pm, Sábado 11:00am a 6:00pm"), cel(),
          cel("Cristian*"), cel("Cristian*"), cel("Cristian*"), cel("Cristian*"), cel("Cristian*")),
     fila(),
-    # Sin fila "Leyenda:" en ningún lado — solo la tabla de Almuerzo marca el límite.
-    fila(cel(), cel("Almuerzo"), cel("Desde"), cel("Hasta")),
-    fila(cel(), cel("1 Turno"), cel("12:00 pm"), cel("1:00 pm")),
-    fila(cel(), cel("2 Turno"), cel("1:00 pm"), cel("2:00 pm")),
-    fila(cel(), cel("3 Turno"), cel("6:00 pm"), cel("6:20 pm")),
+    # Sin fila "Leyenda:" en ningún lado — solo la tabla de Almuerzo marca el
+    # límite. En columnas 14-16 (fuera de col_dia, 2-8), como en la hoja real.
+    fila(*([cel()] * 14), cel("Almuerzo"), cel("Desde"), cel("Hasta")),
+    fila(*([cel()] * 14), cel("1 Turno"), cel("12:00 pm"), cel("1:00 pm")),
+    fila(*([cel()] * 14), cel("2 Turno"), cel("1:00 pm"), cel("2:00 pm")),
+    fila(*([cel()] * 14), cel("3 Turno"), cel("6:00 pm"), cel("6:20 pm")),
 ]
 META_SIN_LEYENDA = {"sheets": [{"data": [{"rowData": FILAS_SIN_LEYENDA}]}]}
 h_sl = turnos.parsear_horario(META_SIN_LEYENDA)
@@ -412,6 +413,37 @@ chk({"Gisela", "Jennifer", "Elvia", "Natalia", "Laura"} <= turno1_aj,
     f"Turno 1 no se corta por la tabla de Almuerzo al lado (mismas filas): {sorted(turno1_aj)}")
 chk(h_aj.get("almuerzos") == {1: (12.0, 13.0), 2: (13.0, 14.0), 3: (18.0, 18.0 + 20 / 60)},
     f"La tabla de Almuerzo al lado se sigue leyendo bien pese al cambio: {h_aj.get('almuerzos')}")
+
+# =====================================================
+# Auditoría: si la palabra "Almuerzo" cae en una fila que TODAVÍA tiene gente
+# del cuadro (en las columnas de los días), esa fila nunca debe cortar el
+# cuadro — antes bastaba con que apareciera en cualquier columna de la fila.
+# =====================================================
+FILAS_ALMUERZO_EN_FILA_CON_GENTE = [
+    fila(cel(), cel(), cel("Semana del 17 al 23 de Agosto de 2026")),
+    fila(cel(), cel(), cel("Lunes 17"), cel("Martes 18"), cel("Miercoles 19"),
+         cel("Jueves 20"), cel("Viernes 21"), cel("Sabado 22"), cel("Domingo 23")),
+    fila(cel(), cel("1 Turno 8:00am a 4:00pm, Sábado 8:00am a 3:00pm"),
+         cel("Gisela"), cel("Gisela"), cel("Gisela"), cel("Gisela"), cel("Gisela"), cel("Gisela"),
+         *([cel()] * 12), cel("Almuerzo")),   # "Almuerzo" en la MISMA fila que Gisela
+    fila(cel(), cel(), cel("Jennifer"), cel("Jennifer"), cel("Jennifer"),
+         cel("Jennifer"), cel("Jennifer"), cel("Jennifer")),
+    fila(),
+    fila(cel(), cel("2 Turno 11:00am a 7:00pm, Sábado 10:00am a 5:00pm"),
+         cel("Estefania"), cel("Estefania"), cel("Estefania"), cel("Estefania"),
+         cel("Estefania"), cel("Estefania")),
+    fila(),
+    fila(cel(), cel("3 Turno 2:00pm a 9:00pm, Sábado 11:00am a 6:00pm"), cel(),
+         cel("Cristian*"), cel("Cristian*"), cel("Cristian*"), cel("Cristian*"), cel("Cristian*")),
+    fila(),
+    fila(*([cel()] * 20), cel("Almuerzo"), cel("Desde"), cel("Hasta")),
+    fila(*([cel()] * 20), cel("1 Turno"), cel("12:00 pm"), cel("1:00 pm")),
+]
+META_ALMUERZO_EN_FILA_CON_GENTE = {"sheets": [{"data": [{"rowData": FILAS_ALMUERZO_EN_FILA_CON_GENTE}]}]}
+h_afg = turnos.parsear_horario(META_ALMUERZO_EN_FILA_CON_GENTE)
+turnos_afg = {a["turno"] for a in h_afg.get("asignaciones", [])}
+chk({1, 2, 3} <= turnos_afg,
+    f"'Almuerzo' en una fila con gente no corta el cuadro (turnos 2 y 3 se siguen viendo): {sorted(turnos_afg)}")
 
 print("\nRESULTADO:", "[X] HAY FALLOS" if fallos else "[OK] TODO CORRECTO")
 sys.exit(1 if fallos else 0)

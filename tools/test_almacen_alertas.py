@@ -80,6 +80,44 @@ chk("Ana" in personas and personas["Ana"]["minutos_sin_cobertura"] >= 10,
 chk("Mariana" in personas and personas["Mariana"]["veces_respondio"] == 1,
     f"resumen() incluye veces_respondio para Mariana: {personas.get('Mariana')}")
 
+# --- Cobertura de HOY nunca liberada: cuenta hasta ahora en resumen() ---
+almacen.abrir_cobertura("Beto", "Mariana")
+r_hoy = almacen.resumen(hoy, hoy)
+beto = {p["nombre"]: p for p in r_hoy["personas"]}.get("Beto")
+chk(beto is not None and beto["minutos_cubierto"] >= 0,
+    f"Cobertura de hoy sin liberar cuenta hasta ahora en resumen(): {beto}")
+
+# --- Cobertura VIEJA (de hace días) nunca liberada: NO debe crecer sin limite
+# cada vez que se corre el resumen (bug real: antes usaba time.time() sin
+# chequear la fecha, así que sumaba minutos contra "ahora" para siempre).
+with almacen._con() as cx:
+    cx.execute("""INSERT INTO coberturas (clave_titular, titular, clave_soporte, soporte, fecha, desde)
+                  VALUES (?,?,?,?,?,?)""",
+               ("carla", "Carla", "mariana", "Mariana", "2020-01-01", time.time() - 999999 * 60))
+r_vieja = almacen.resumen("2020-01-01", "2020-01-01")
+carla = {p["nombre"]: p for p in r_vieja["personas"]}.get("Carla")
+chk(carla is not None and carla["minutos_cubierto"] == 0,
+    f"Cobertura vieja sin liberar cuenta 0 min, no crece contra el reloj actual: {carla}")
+
+# --- Episodio de alertas huérfano de un día anterior: se autocierra en 0 min
+# la próxima vez que se llama registrar_alertas_activas (cualquier día), en
+# vez de quedar con ts_fin NULL para siempre y leerse distinto según cuándo
+# se consulte (mientras "hoy" seguía siendo ese día sumaba tiempo real; en
+# cuanto avanza la fecha, minutos_sin_cobertura lo leía en 0 — el bug era ESE
+# cambio de lectura, no el 0 en sí).
+with almacen._con() as cx:
+    cx.execute("INSERT INTO alertas (clave, nombre, fecha, ts_inicio) VALUES (?,?,?,?)",
+               ("dario", "Dario", "2020-01-01", time.time() - 999999 * 60))
+almacen.registrar_alertas_activas([])  # cualquier llamada normal debe autocurar lo huérfano
+with almacen._con() as cx:
+    fila_huerfana = cx.execute(
+        "SELECT * FROM alertas WHERE clave=? AND fecha=?", ("dario", "2020-01-01")).fetchone()
+chk(fila_huerfana is not None and fila_huerfana["ts_fin"] == fila_huerfana["ts_inicio"],
+    f"Episodio huérfano de otro día se autocierra en 0 min, no queda NULL para siempre: {dict(fila_huerfana) if fila_huerfana else None}")
+min_dario = almacen.minutos_sin_cobertura("2020-01-01", "2020-01-01")
+chk(min_dario.get("dario", {}).get("minutos") == 0,
+    f"El episodio huérfano ya cerrado se lee igual (0 min) sin importar cuándo se consulte: {min_dario.get('dario')}")
+
 shutil.rmtree(_TMP, ignore_errors=True)
 
 print("\nRESULTADO:", "[X] HAY FALLOS" if fallos else "[OK] TODO CORRECTO")
