@@ -623,9 +623,11 @@ function renderPanel(d) {
 
   pintarLista($("#lista-cobertura"), cob, x => {
     const d2 = itemBase(x, "rojo");
-    // El motivo de "turno terminado" ya es una frase completa; no repetir
-    // la hora de entrada delante (quedaría "empezó 8am · terminó a las 4pm").
-    const det = x.turno_terminado ? x.motivo : `su turno empezó ${x.desde} · ${x.motivo}`;
+    // El motivo de "turno terminado" y "pendientes de ayer" ya son frases
+    // completas; no repetir la hora de entrada delante (quedaría "empezó
+    // 8am · terminó a las 4pm", o "empezó 11am · entra a las 11am...").
+    const det = (x.turno_terminado || x.pendientes_ayer)
+      ? x.motivo : `su turno empezó ${x.desde} · ${x.motivo}`;
     d2.append(el("span", "det", det));
     d2.append(botonCubrir(x));
     return d2;
@@ -724,7 +726,10 @@ function renderPanel(d) {
 
   pintarLista($("#lista-porentrar"), d.por_entrar, x => {
     const d2 = itemBase(x, "");
-    d2.append(el("span", "det", `entra ${x.desde}`));
+    // Turno 2/3 con pendientes de ayer ya revisados trae una nota aparte;
+    // el resto solo dice a qué hora entra.
+    const det = x.estado_etq ? `${x.estado_etq} · entra ${x.desde}` : `entra ${x.desde}`;
+    d2.append(el("span", "det", det));
     d2.append(botonCubrir(x));   // soporte puede adelantarse, sin esperar la alarma
     return d2;
   });

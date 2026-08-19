@@ -174,10 +174,45 @@ chk("Estefania" in nombres_cob and "Ximena" in nombres_cob,
     f"Lunes 9:00am sin señal -> turno 1 requiere cobertura: {sorted(nombres_cob)}")
 chk("Cristian" not in nombres_cob,
     f"Cristian (soporte por '*') nunca se pide cubrir, sin hoja Roles: {sorted(nombres_cob)}")
-chk({x["nombre"] for x in c["por_entrar"]} >= {"Gisela", "Yesid"},
-    f"Turnos 2 y 3 aún no entran (no se alerta): {sorted(x['nombre'] for x in c['por_entrar'])}")
-chk(all(x["motivo"].startswith("sin señal") for x in c["requieren_cobertura"]),
-    "El motivo indica que no hay señal desde el inicio del turno")
+
+# Turno 2/3 (Gisela, Yesid) aún no entran a las 9am, pero el turno 1 ya abrió
+# (8am): pueden tener chats pendientes de ayer sin revisar, así que TAMBIÉN
+# entran a "Requieren cobertura" — con un motivo distinto al de "sin señal",
+# y ya NO en "Aún no entran".
+chk({"Gisela", "Yesid"} <= nombres_cob,
+    f"Turno 2/3 antes de entrar, con el día ya abierto -> pendientes de ayer: {sorted(nombres_cob)}")
+chk(not ({"Gisela", "Yesid"} & {x["nombre"] for x in c["por_entrar"]}),
+    "Turno 2/3 con pendientes de ayer ya NO está en 'Aún no entran'")
+pendientes = [x for x in c["requieren_cobertura"] if x["nombre"] in ("Gisela", "Yesid")]
+chk(all(x.get("pendientes_ayer") and "pendientes de ayer" in x["motivo"] for x in pendientes),
+    f"El motivo de turno 2/3 antes de entrar es sobre pendientes de ayer: {pendientes}")
+
+# Con "Yo lo cubro" reciente (< 2.5h): pasa a "Aún no entran" tranquilo.
+cob_pend_fresca = {turnos.clave("Gisela"): {"soporte": "Mariana", "desde": time.time() - 60 * 60,
+                                             "desde_hora": "8:00 AM"}}
+c_pf = turnos.calcular_cobertura(h, LUNES, coberturas=cob_pend_fresca)
+gisela_pf = [x for x in c_pf["por_entrar"] if x["nombre"] == "Gisela"]
+chk(bool(gisela_pf) and gisela_pf[0].get("cubierto_por") == "Mariana"
+    and gisela_pf[0].get("estado_etq") == "Pendientes de ayer ya revisados",
+    f"Pendientes de ayer con 'Yo lo cubro' de hace 1h: tranquilo en 'Aún no entran': {gisela_pf}")
+chk("Gisela" not in {x["nombre"] for x in c_pf["requieren_cobertura"]},
+    "Con pendientes ya revisados (vigente), Gisela no está en Requieren cobertura")
+
+# Con "Yo lo cubro" vencido (> 2.5h): vuelve a pedir que alguien revise.
+cob_pend_vencida = {turnos.clave("Gisela"): {"soporte": "Mariana", "desde": time.time() - 160 * 60,
+                                              "desde_hora": "6:20 AM"}}
+c_pv = turnos.calcular_cobertura(h, LUNES, coberturas=cob_pend_vencida)
+gisela_pv = [x for x in c_pv["requieren_cobertura"] if x["nombre"] == "Gisela"]
+chk(bool(gisela_pv) and gisela_pv[0].get("cubierto_por") is None and gisela_pv[0].get("pendientes_ayer"),
+    f"Pendientes de ayer con revisión de hace 160 min (> 2.5h): vuelve a pedir revisión: {gisela_pv}")
+
+# Turno 1 nunca lleva la marca de "pendientes de ayer" (es quien abre el día).
+chk(not any(x.get("pendientes_ayer") for x in c["requieren_cobertura"] if x["turno"] == 1),
+    "Turno 1 nunca se marca como 'pendientes de ayer'")
+
+turno1_cob = [x for x in c["requieren_cobertura"] if x["turno"] == 1]
+chk(bool(turno1_cob) and all(x["motivo"].startswith("sin señal") for x in turno1_cob),
+    "El motivo de turno 1 sigue indicando que no hay señal desde el inicio del turno")
 
 # Con presencia reciente de Estefania
 pres = {turnos.clave("Estefania"): {"ts": time.time() - 120}}
@@ -246,11 +281,14 @@ c5 = turnos.calcular_cobertura(h, TEMPRANO)
 chk(not c5["requieren_cobertura"],
     "7:30am (antes del turno 1) -> no hay alertas todavía")
 
-# Tolerancia: 8:10am aún está dentro de los 15 min de gracia
+# Tolerancia: 8:10am aún está dentro de los 15 min de gracia para turno 1
+# (turno 2/3 puede tener pendientes de ayer desde que abrió el día a las
+# 8am, así que se acota la revisión a turno 1 para no mezclar los dos casos).
 c6 = turnos.calcular_cobertura(h, datetime(2026, 7, 27, 8, 10))
-chk(not c6["requieren_cobertura"], "8:10am -> dentro de la tolerancia de 15 min")
+chk(not any(x["turno"] == 1 for x in c6["requieren_cobertura"]),
+    "8:10am -> turno 1 dentro de la tolerancia de 15 min")
 c7 = turnos.calcular_cobertura(h, datetime(2026, 7, 27, 8, 20))
-chk(bool(c7["requieren_cobertura"]), "8:20am -> pasada la tolerancia, ya alerta")
+chk(any(x["turno"] == 1 for x in c7["requieren_cobertura"]), "8:20am -> pasada la tolerancia, ya alerta turno 1")
 
 # Fuera de jornada
 c8 = turnos.calcular_cobertura(h, datetime(2026, 7, 27, 23, 0))

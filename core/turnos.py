@@ -86,6 +86,12 @@ UMBRAL_INACTIVO_MIN = 30
 # cobertura" (hay que confirmar la cobertura de nuevo, no vale una sola vez).
 VENCIMIENTO_COBERTURA_MIN = 90
 
+# Turno 2/3, antes de que entren: pueden tener chats pendientes de ayer sin
+# revisar. Desde que abre el turno 1, cada este tanto sin que soporte
+# confirme que ya los revisó, se pide cobertura preventiva (con el mismo
+# mecanismo de "Yo lo cubro" y vencimiento, pero un ciclo más largo).
+VENCIMIENTO_PENDIENTES_MIN = 150
+
 # Roles que NO requieren cobertura de soporte (soporte cubre a los de redes).
 # Ojo con "jefa" y "jefe": el rol real es "Jefa de ventas", así que hay que
 # contemplar las dos formas o la jefatura acabaría en la lista de cobertura.
@@ -476,6 +482,10 @@ def calcular_cobertura(horario, ahora, presencia=None, estados=None,
         Aplica en los dos momentos en que puede faltar alguien mientras se le
         espera: antes de entrar (pasada la tolerancia) y durante su turno.
         Una vez que su turno termina deja de ser urgente (ver no_se_espera).
+        Turno 2/3 tienen un tercer caso, distinto: desde que abre el turno 1
+        y hasta que entran, cada VENCIMIENTO_PENDIENTES_MIN minutos sin que
+        soporte confirme, se pide revisar los chats pendientes de ayer — a
+        diferencia del resto de "aún no entran" (nunca urgente).
       - ausencia_informada:  en turno con estado (almuerzo…) o novedad; O
         sin señal en turno pero YA con "Yo lo cubro" vigente
         (< VENCIMIENTO_COBERTURA_MIN). Si la cobertura vence y sigue sin
@@ -505,6 +515,9 @@ def calcular_cobertura(horario, ahora, presencia=None, estados=None,
     # de cierre a la apertura del día siguiente no se rastrea nada.
     _turnos_hoy = {**TURNOS, **(horario.get("turnos") or {})}
     cierre_dia = max(v.get(clave_dia, v.get("sem", (0.0, 0.0)))[1] for v in _turnos_hoy.values())
+    # Hora de apertura del día = inicio del turno 1 — de ahí en adelante puede
+    # haber chats de ayer sin revisar esperando a los de turno 2/3.
+    apertura_dia = _turnos_hoy.get(1, TURNOS[1]).get(clave_dia, TURNOS[1]["sem"])[0]
 
     res = {"requieren_cobertura": [], "ausencia_informada": [], "en_linea": [],
            "por_entrar": [], "no_se_espera": [], "novedades": novedades,
@@ -545,6 +558,24 @@ def calcular_cobertura(horario, ahora, presencia=None, estados=None,
 
         if not info["cubrir"]:
             res["no_se_espera"].append(item)
+            continue
+
+        # Turno 2/3, antes de entrar hoy, con el turno 1 ya abierto: puede
+        # tener chats pendientes de ayer sin revisar. A diferencia del resto
+        # de "aún no entran" (nunca urgente), esto SÍ pide cobertura cada
+        # VENCIMIENTO_PENDIENTES_MIN minutos, con el mismo mecanismo de
+        # "Yo lo cubro" y vencimiento que el resto de la alarma roja.
+        if a["turno"] in (2, 3) and _rol_cubrible(rol) and apertura_dia <= ahora_h < ini:
+            vigente_pend = bool(cob) and (time.time() - cob["desde"]) / 60.0 <= VENCIMIENTO_PENDIENTES_MIN
+            if vigente_pend:
+                item["estado_etq"] = "Pendientes de ayer ya revisados"
+                res["por_entrar"].append(item)
+            else:
+                item["cubierto_por"] = None
+                item["cubierto_desde"] = None
+                item["pendientes_ayer"] = True
+                item["motivo"] = f"entra a las {item['desde']} pero puede tener chats pendientes de ayer sin revisar"
+                res["requieren_cobertura"].append(item)
             continue
 
         # Aún no entra: antes de que se cumpla la tolerancia nunca es urgente

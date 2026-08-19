@@ -21,7 +21,8 @@ navegador). Es una herramienta de coordinación, no de control de acceso.
      hay señal: *a estos hay que entrarles*.
    - **Novedades de hoy** — ausencias/permisos reportados, con hora y nota.
    - **En línea** — con actividad reciente.
-   - **Aún no entran** — su turno todavía no comienza (no se alerta).
+   - **Aún no entran** — su turno todavía no comienza (no se alerta). Excepto
+     turno 2/3 con el día ya abierto: ver "Pendientes de ayer" más abajo.
    - **Hoy no se espera** — compensatorio, ausencia o cambio de horario; y
      cualquiera cuyo turno ya terminó (esté cubierto o no — dejó de ser
      urgente, solo se informa quién quedó cubriendo si aplica).
@@ -237,10 +238,12 @@ pasa a "En línea" y nunca aparece en rojo, sin importar coberturas ni
 horarios.
 
 Hay dos excepciones donde el botón "Yo lo cubro" **no vence ni fuerza nada a
-rojo**, porque nunca es urgente: **"Aún no entran"** (adelantarse antes de que
-se cumpla la tolerancia) y **"Hoy no se espera"** por turno terminado (ver
-abajo) — en ambas es solo para que quede constancia de quién se hizo cargo,
-sin presión de tiempo.
+rojo**, porque nunca es urgente: **"Aún no entran"** de turno 1, o de turno
+2/3 antes de que abra el día (adelantarse antes de que se cumpla la
+tolerancia), y **"Hoy no se espera"** por turno terminado (ver abajo) — en
+ambas es solo para que quede constancia de quién se hizo cargo, sin presión
+de tiempo. Turno 2/3 con el día ya abierto es la excepción a la excepción:
+ver "Pendientes de ayer" más abajo.
 
 **Cuando el turno de alguien termina, deja de ser urgente**: pasa directo a
 **"Hoy no se espera"**, esté cubierto o no — ya no hace falta que soporte
@@ -250,6 +253,23 @@ vencimiento: es solo informativo. Esto sigue así hasta la **hora de cierre
 del día** (la más tardía entre los 3 turnos, normalmente el fin del turno 3);
 pasado el cierre, la persona ya no aparece en ninguna lista — el tiempo
 nocturno no se rastrea.
+
+### Pendientes de ayer (turno 2 y 3, antes de entrar)
+
+A diferencia de turno 1 (que abre el día), alguien de **turno 2 o turno 3**
+puede tener chats de ayer sin revisar mientras espera a que empiece su
+turno de hoy. Desde que **abre el turno 1** y hasta que esa persona entra,
+cada **2 horas y media** sin que soporte confirme que ya los revisó, aparece
+en **"Requieren cobertura"** con el motivo *"entra a las [hora] pero puede
+tener chats pendientes de ayer sin revisar"** — a diferencia del resto de
+"Aún no entran", que nunca alarma.
+
+Funciona con el mismo botón **"Yo lo cubro"**: al confirmarlo, la persona
+pasa a "Aún no entran" con la nota *"Pendientes de ayer ya revisados"*, y
+ahí se queda tranquila 2.5 horas; si pasa ese tiempo y sigue sin entrar,
+vuelve a pedir que alguien revise. En cuanto la persona misma se conecta,
+pasa a "En línea" como cualquier otro caso. No aplica a soporte ni a roles
+no cubribles, y turno 1 nunca lleva esta marca.
 
 ### Desconectado automático al cerrar
 
@@ -339,8 +359,11 @@ Lo más simple es **agregar una pestaña `Horarios`** al documento espejo que ya
 lee la calculadora: así no hay que compartir nada nuevo ni tocar variables.
 
 Ajustes finos en `core/turnos.py`:
-`TOLERANCIA_MIN` (gracia tras el inicio del turno, 15 min) y
-`UMBRAL_INACTIVO_MIN` (sin señal para considerar inactivo, 30 min).
+`TOLERANCIA_MIN` (gracia tras el inicio del turno, 15 min),
+`UMBRAL_INACTIVO_MIN` (sin señal para considerar inactivo, 30 min),
+`VENCIMIENTO_COBERTURA_MIN` (dura un "Yo lo cubro" en turno, 90 min) y
+`VENCIMIENTO_PENDIENTES_MIN` (dura un "Yo lo cubro" de pendientes de ayer
+antes de entrar, 150 min = 2.5h).
 
 ---
 
