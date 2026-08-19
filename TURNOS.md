@@ -236,10 +236,11 @@ reclamarla una sola vez. Si en cualquier momento la persona sí se conecta,
 pasa a "En línea" y nunca aparece en rojo, sin importar coberturas ni
 horarios.
 
-La única excepción es **"Aún no entran"**: ahí el botón "Yo lo cubro" es solo
-para adelantarse (si soporte ya sabe que alguien va a cubrir a quien está por
-entrar), pero nunca fuerza nada a rojo ni vence — antes de que se cumpla la
-tolerancia, nunca es urgente.
+Hay dos excepciones donde el botón "Yo lo cubro" **no vence ni fuerza nada a
+rojo**, porque nunca es urgente: **"Aún no entran"** (adelantarse antes de que
+se cumpla la tolerancia) y **"Hoy no se espera"** por turno terminado (ver
+abajo) — en ambas es solo para que quede constancia de quién se hizo cargo,
+sin presión de tiempo.
 
 **Cuando el turno de alguien termina, deja de ser urgente**: pasa directo a
 **"Hoy no se espera"**, esté cubierto o no — ya no hace falta que soporte

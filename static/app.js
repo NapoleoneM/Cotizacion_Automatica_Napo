@@ -705,10 +705,11 @@ function renderPanel(d) {
   pintarLista($("#lista-nospera"), d.no_se_espera, x => {
     const d2 = itemBase(x, "");
     // Compensatorio/Ausencia/Cambio de horario no llevan nada más — solo el
-    // caso de "turno terminado" trae esta info adicional (con o sin cobertura).
-    if (x.turno_terminado || x.cubierto_por) {
-      const cubre = x.cubierto_por ? ` · cubre ${x.cubierto_por} desde ${x.cubierto_desde || ""}` : "";
-      d2.append(el("span", "det", `${x.estado_etq || "Turno terminado"}${cubre}`));
+    // caso de "turno terminado" trae esta info adicional, y el botón para que
+    // soporte se adelante a cubrir (voluntario, no obligatorio ni con alarma).
+    if (x.turno_terminado) {
+      d2.append(el("span", "det", x.estado_etq || "Turno terminado"));
+      d2.append(botonCubrir(x));
     }
     return d2;
   });
