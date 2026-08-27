@@ -12,7 +12,12 @@ from core.app_config import log
 # un solo lugar para que un cambio de documento no deje fuentes mezcladas.
 from core.mayorista_logic import _SPREADSHEET_ID, _HOJA_TABLAS
 
-_RANGO = "A1:AH50"  # hasta AH para incluir la tabla NEOROS (antes se cortaba en AE)
+# Se pide la hoja COMPLETA, sin rango fijo. El rango anterior (A1:AH50) ya
+# terminaba exactamente en la última columna con datos: una columna más en el
+# CORE y la app la habría cortado en silencio. Google solo devuelve las filas
+# con contenido, así que pedir todo cuesta lo mismo (medido: 0,31 s y 949 KB
+# contra 0,43 s y 926 KB del rango fijo), y parsear_grid ya recorta al
+# contenido real.
 _SCOPES = ["https://www.googleapis.com/auth/spreadsheets.readonly"]
 
 
@@ -103,7 +108,7 @@ def obtener_tabla_precios(ruta_credenciales):
         worksheet = spreadsheet.worksheet(_HOJA_TABLAS)
         meta = spreadsheet.fetch_sheet_metadata(params={
             "includeGridData": "true",
-            "ranges": f"'{worksheet.title}'!{_RANGO}",
+            "ranges": f"'{worksheet.title}'",
         })
         tabla = parsear_grid(meta)
         if not tabla["celdas"]:

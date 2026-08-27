@@ -35,7 +35,9 @@ from core.mayorista_logic import _SPREADSHEET_ID as _ESPEJO_ID
 _SHEET_ID = os.environ.get("TURNOS_SHEET_ID", _ESPEJO_ID)
 _HOJA = os.environ.get("TURNOS_HOJA", "Horarios")
 _HOJA_ROLES = os.environ.get("TURNOS_HOJA_ROLES", "Roles")
-_RANGO = "A1:AH60"
+# Sin rango fijo: se pide la hoja completa (ver la nota en tabla_precios.py).
+# Así, si la jefa agrega columnas a la derecha —como la de auxiliares de
+# bodega— o filas abajo, no se pierden por un límite escrito a mano.
 _SCOPES = ["https://www.googleapis.com/auth/spreadsheets.readonly"]
 
 # Horarios de cada turno: (hora_inicio, hora_fin) en formato 24h decimal.
@@ -742,7 +744,7 @@ def obtener_horario(ruta_credenciales):
         ss = gc.open_by_key(_SHEET_ID)
 
         meta = ss.fetch_sheet_metadata(params={
-            "includeGridData": "true", "ranges": f"'{_HOJA}'!{_RANGO}",
+            "includeGridData": "true", "ranges": f"'{_HOJA}'",
         })
         res = parsear_horario(meta)
         if "error" in res:
