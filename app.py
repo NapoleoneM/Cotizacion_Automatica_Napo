@@ -464,10 +464,24 @@ def _componer_bloques(tabla):
         return {"cells": cells, "col_px": cpx, "row_px": rpx,
                 "w": sum(cpx), "h": sum(rpx), "x0": 0, "y0": 0}
 
+    def fin_bloque(c0, c1, r0):
+        """Fila siguiente a la última CON TEXTO en ese rango de columnas.
+
+        Se calcula en vez de fijarla porque estos dos bloques crecen hacia
+        abajo: cuando se agregó "Recargo +5" a Joyerías y Mayoristas, cada uno
+        bajó una fila y el límite fijo dejó afuera justo la fila del valor de
+        PLATA 925 — en la app se veía el título sin su precio. Solo se usa acá:
+        arriba no serviría, porque las columnas de CLIENTE se solapan con las
+        de JOYERÍAS y el bloque se estiraría hasta el final de la hoja.
+        """
+        filas = [c["r"] for c in celdas
+                 if c0 <= c["c"] < c1 and c["r"] >= r0 and c["texto"]]
+        return (max(filas) + 1) if filas else r0
+
     cliente = bloque(1, 9, 0, 25)
     dolar = bloque(19, 27, 0, 25)
-    joyer = bloque(6, 9, 27, 44)
-    mayor = bloque(15, 18, 27, 45)
+    joyer = bloque(6, 9, 27, fin_bloque(6, 9, 27))
+    mayor = bloque(15, 18, 27, fin_bloque(15, 18, 27))
     neoros = bloque(29, 34, 1, 9)
 
     cliente["x0"] = MARGEN; cliente["y0"] = MARGEN
