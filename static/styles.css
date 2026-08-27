@@ -140,7 +140,6 @@ h1 { font-size: 22px; margin: 0; }
 .panel-sec { margin-bottom: 10px; }
 .panel-sec-tit { font-weight: bold; font-size: 12px; margin-bottom: 4px; cursor: default; }
 details.panel-sec > summary { cursor: pointer; list-style: revert; }
-.panel-sec-tit.rojo { color: #e74c3c; }
 .panel-sec-tit.amarillo { color: var(--naranja); }
 .panel-sec-tit.verde { color: var(--verde); }
 .panel-sec-tit.gris { color: var(--texto-suave); }
@@ -150,10 +149,9 @@ details.panel-sec > summary { cursor: pointer; list-style: revert; }
   background: var(--card-int); border-radius: 6px; padding: 5px 7px;
   border-left: 3px solid transparent;
 }
-.panel-item.rojo { border-left-color: #e74c3c; }
 .panel-item.amarillo { border-left-color: var(--naranja); }
 .panel-item.verde { border-left-color: var(--verde); }
-/* Sin datos suficientes para un veredicto (ej. soporte sin nada que cubrir) */
+/* Sin datos en el rango (ej. una semana sin ninguna senal registrada) */
 .panel-item.gris { border-left-color: var(--texto-suave); }
 /* Traslado a la zona presencial: ni alarma ni ausencia normal */
 .panel-item.morado { border-left-color: #8e7cc3; }
@@ -174,16 +172,12 @@ details.panel-sec > summary { cursor: pointer; list-style: revert; }
 .panel-sec-tit.oro { color: var(--oro); }
 .panel-vacio { color: var(--texto-suave); font-style: italic; font-size: 11px; }
 
-/* "Yo lo cubro" / liberar */
-.panel-cubrir { display: flex; align-items: center; gap: 6px; margin-top: 4px; }
-.cubre-txt { color: var(--verde); font-size: 11px; flex: 1; }
+/* Botones chicos de la cabecera del panel (silenciar, salir) */
 .panel-mini {
   border: 1px solid var(--borde); background: transparent; color: var(--texto-suave);
   border-radius: 5px; padding: 2px 7px; font-size: 11px; cursor: pointer;
   font-family: var(--fuente);
 }
-.panel-mini.oro { background: var(--oro); color: var(--oro-texto); border-color: var(--oro);
-  font-weight: bold; }
 .panel-mini:hover { filter: brightness(1.1); }
 
 .panel-cab-btns { display: flex; gap: 4px; }
@@ -254,3 +248,12 @@ details.panel-sec > summary { cursor: pointer; list-style: revert; }
 .gate-btn { max-width: 200px; margin: 16px auto 0; }
 .gate-btn:disabled { opacity: .5; cursor: default; }
 .gate-msg { min-height: 18px; margin: 12px 0 0; font-size: 13px; font-weight: bold; color: var(--rojo); }
+
+/* Datos de bodega (pestaña Valor Tienda): solo los ven los auxiliares */
+.bodega-grid { display: flex; flex-direction: column; gap: 4px; }
+.bodega-fila {
+  display: flex; justify-content: space-between; align-items: baseline; gap: 10px;
+  background: var(--card-int); border-radius: 6px; padding: 6px 9px;
+}
+.bodega-etq { color: var(--texto-suave); font-size: 12px; }
+.bodega-val { font-weight: bold; font-variant-numeric: tabular-nums; }

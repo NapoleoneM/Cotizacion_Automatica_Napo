@@ -40,20 +40,23 @@ _SCOPES = ["https://www.googleapis.com/auth/spreadsheets.readonly"]
 
 # Horarios de cada turno: (hora_inicio, hora_fin) en formato 24h decimal.
 # 'sem' = lunes a viernes, 'sab' = sábado, 'dom' = domingo.
+# El tercer bloque dejó de ser un turno de ventas: hoy es el de auditoría de
+# calidad (10am a 6pm). Como siempre, si el rótulo de la hoja trae horas con
+# am/pm, esas mandan y esto queda solo como respaldo.
 TURNOS = {
     1: {"sem": (8.0, 16.0), "sab": (8.0, 15.0), "dom": (8.0, 15.0)},
     2: {"sem": (11.0, 19.0), "sab": (10.0, 17.0), "dom": (10.0, 17.0)},
-    3: {"sem": (14.0, 21.0), "sab": (11.0, 18.0), "dom": (11.0, 18.0)},
+    3: {"sem": (10.0, 18.0), "sab": (9.0, 16.0), "dom": (9.0, 16.0)},
 }
 
 DIAS = ["lunes", "martes", "miercoles", "jueves", "viernes", "sabado", "domingo"]
 
 # Estados de la leyenda. 'cubrir' indica si, estando en ese estado, se espera
-# que la persona esté en su turno (y por tanto soporte debe intervenir si
-# falta). 'sede' marca las sedes de atención presencial (Santa Fe, El
-# Tesoro, Mostrador…): la persona SÍ está trabajando, pero no en chats —
-# sus chats quedan sin atender todo el turno, así que van como ausencia
-# informada (con "Yo lo cubro"), no como alarma roja ni como "no se espera".
+# que la persona esté en su turno (el nombre viene de cuando existía la
+# cobertura de soporte; hoy solo distingue "trabaja hoy" de "no viene").
+# 'sede' marca las sedes de atención presencial (Santa Fe, El Tesoro,
+# Mostrador…): la persona SÍ está trabajando, pero no en chats, así que va
+# como ausencia informada y no como "no se espera".
 ESTADOS = {
     "normal": {"cubrir": True, "etiqueta": ""},
     "santafe": {"cubrir": True, "sede": True, "etiqueta": "En Santa Fe (CC)"},
@@ -69,35 +72,23 @@ ESTADOS = {
 # Almuerzo por turno (hora_inicio, hora_fin) en formato 24h decimal — respaldo
 # si la tabla "Almuerzo | Desde | Hasta" no está en la hoja (la hoja manda si
 # existe, igual que con TURNOS).
+# El turno 3 no tiene respaldo a propósito: cuando dejó de ser el turno de
+# tarde (2pm-9pm) para ser el de auditoría de calidad (10am-6pm), su almuerzo
+# viejo de 6:00-6:20pm quedó justo al final de la jornada, así que se encendía
+# el instante en que el turno terminaba y no antes. Mientras la hoja no traiga
+# la fila "3 Turno" en la tabla de Almuerzo, esa persona no tiene almuerzo
+# automático — preferible a inventarle una hora.
 ALMUERZOS = {
     1: (12.0, 13.0),
     2: (13.0, 14.0),
-    3: (18.0, 18.0 + 20 / 60),
 }
 
 
-# Minutos de gracia tras el inicio del turno antes de pedir cobertura, y
-# tiempo sin señal de la calculadora para considerar a alguien inactivo.
-TOLERANCIA_MIN = 15
+# Minutos sin señal de la calculadora para dejar de contar a alguien como
+# "En línea". Es el único umbral que queda: el panel ya no pide coberturas
+# (agosto de 2026 — se eliminó el rol de soporte, todos son vendedores), así
+# que no hay tolerancias ni vencimientos que administrar.
 UMBRAL_INACTIVO_MIN = 30
-
-# Una reclamación de "Yo lo cubro" protege de la alarma roja solo por este
-# tiempo — pasado, si la persona sigue sin señal, vuelve a "Requieren
-# cobertura" (hay que confirmar la cobertura de nuevo, no vale una sola vez).
-VENCIMIENTO_COBERTURA_MIN = 90
-
-# Turno 2/3, antes de que entren: pueden tener chats pendientes de ayer sin
-# revisar. Desde que abre el turno 1, cada este tanto sin que soporte
-# confirme que ya los revisó, se pide cobertura preventiva (con el mismo
-# mecanismo de "Yo lo cubro" y vencimiento, pero un ciclo más largo).
-VENCIMIENTO_PENDIENTES_MIN = 150
-
-# Roles que NO requieren cobertura de soporte (soporte cubre a los de redes).
-# Ojo con "jefa" y "jefe": el rol real es "Jefa de ventas", así que hay que
-# contemplar las dos formas o la jefatura acabaría en la lista de cobertura.
-# "presencial": las vendedoras de la tienda no atienden chats, no se cubren.
-_ROLES_NO_CUBRIR = ("soporte", "jefe", "jefa", "coordin", "web", "pagina",
-                    "página", "presencial")
 
 
 def _norm(t):
@@ -141,6 +132,12 @@ def _horas_del_texto(texto):
         h1 += int(m.group(2) or 0) / 60
         h2 = int(m.group(4)) % 12 + (12 if m.group(6) == "pm" else 0)
         h2 += int(m.group(5) or 0) / 60
+        if h2 <= h1:
+            # "10:00pm a 6:00pm" — casi siempre un am/pm mal escrito en la
+            # hoja. Adivinar la intención sería peor: se ignora el rango y
+            # manda el respaldo de TURNOS, con aviso en el log.
+            log.warning("Rótulo de turno con horas incoherentes, se ignora: %r", texto)
+            continue
         antes = t[:m.start()]
         clave = "sab" if "sabado" in antes[-25:] else ("sem" if "sem" not in res else "sab")
         res.setdefault(clave, (h1, h2))
@@ -154,6 +151,28 @@ def _hora_simple_a_decimal(texto):
         return None
     h = int(m.group(1)) % 12 + (12 if m.group(3) == "pm" else 0)
     return h + int(m.group(2) or 0) / 60
+
+
+def _numero_del_turno(texto, orden):
+    """Número del bloque a partir de su rótulo, o None si la celda no es un
+    rótulo de turno.
+
+    Normalmente el número va delante ("1 Turno 8:00am a 4:00pm"), pero la jefa
+    a veces lo escribe sin número ("Turno 10:00am a 6:00pm"): ahí vale la
+    posición del bloque en la hoja (`orden`). Ojo con leer el número que va
+    DESPUÉS de la palabra: en "Turno 10:00am" el 10 es la hora, no el turno,
+    así que solo cuenta si no viene seguido de otro dígito, de ':' ni de am/pm.
+    """
+    t = _norm(texto)
+    if "turno" not in t:
+        return None
+    m = re.search(r"(\d+)\s*turno", t)
+    if m:
+        return int(m.group(1))
+    m = re.search(r"turno\s*:?\s*(\d+)(?![\d:])(?!\s*(?:am|pm))", t)
+    if m:
+        return int(m.group(1))
+    return orden
 
 
 def _parsear_almuerzo(grid):
@@ -188,14 +207,20 @@ def _parsear_almuerzo(grid):
     return almuerzos
 
 
-def _parsear_vacaciones(grid):
-    """Columna aparte 'Vacaciones': un nombre por fila, debajo del rótulo, en
-    cualquier columna de la hoja. Devuelve la lista de nombres tal cual están
-    escritos (sin normalizar) — vacía si la columna no está en la hoja."""
+def _lista_de_columna(grid, prefijo):
+    """Lista de nombres escrita debajo de un rótulo, en cualquier columna de la
+    hoja: se ubica la celda cuyo texto empieza por `prefijo` y se leen las de
+    abajo hasta la primera vacía. Devuelve los nombres tal cual están escritos
+    (sin normalizar) — vacía si ese rótulo no está en la hoja.
+
+    Lo usan las columnas 'Vacaciones' y 'Auxiliares de bodega'. Ubicar la
+    columna real, en vez de fijarla, es lo que permite que la jefa las mueva
+    de sitio sin romper nada.
+    """
     fila_ini = col_ini = None
     for r, fila in enumerate(grid):
         for c, (t, _bg) in enumerate(fila):
-            if _norm(t).startswith("vacacion"):
+            if _norm(t).startswith(prefijo):
                 fila_ini, col_ini = r, c
                 break
         if fila_ini is not None:
@@ -301,9 +326,8 @@ def parsear_horario(meta, gid=None):
     marcas = []   # (fila, numero_turno, texto)
     for r in range(fila_encabezado + 1, fila_fin_cuadro):
         texto, _bg = celda(r, col_marca)
-        m = re.search(r"(\d+)\s*turno|turno\s*:?\s*(\d+)", _norm(texto))
-        if m:
-            num = int(m.group(1) or m.group(2))
+        num = _numero_del_turno(texto, len(marcas) + 1)
+        if num:
             marcas.append((r, num, texto))
     if not marcas:
         return {"error": "No se encontraron bloques de turno ('1 Turno …')."}
@@ -323,14 +347,12 @@ def parsear_horario(meta, gid=None):
                     continue
                 if _norm(nombre_bruto).startswith(tuple(DIAS)):
                     continue
-                # Un "*" al final del nombre marca a soporte: no se le pide
-                # cobertura (no atiende chats), sin necesitar la hoja Roles.
-                es_soporte = nombre_bruto.rstrip().endswith("*")
-                nombre = nombre_bruto.rstrip("* ").strip() if es_soporte else nombre_bruto
+                # El "*" al final del nombre marcaba a soporte, rol que ya no
+                # existe (todos son vendedores). Se sigue quitando para que
+                # "Elvia*" y "Elvia" no cuenten como dos personas distintas.
+                nombre = nombre_bruto.rstrip("* ").strip()
                 if not nombre:
                     continue
-                if es_soporte:
-                    roles[_norm(nombre)] = "Soporte"
                 estado = "normal"
                 if not _es_blanco(color):
                     mejor, mejor_d = None, 999
@@ -349,7 +371,11 @@ def parsear_horario(meta, gid=None):
             "asignaciones": asignaciones,
             "roles": roles,
             "almuerzos": _parsear_almuerzo(grid),
-            "vacaciones": _parsear_vacaciones(grid),
+            "vacaciones": _lista_de_columna(grid, "vacacion"),
+            # Auxiliares de bodega: no tienen turno en el cuadro (no atienden
+            # chats), pero sí usan la calculadora, así que van al selector
+            # "Soy:" y desbloquean los valores de bodega en "Valor Tienda".
+            "auxiliares": _lista_de_columna(grid, "auxiliar"),
             "estados_leyenda": sorted(set(leyenda.values()))}
 
 
@@ -383,7 +409,7 @@ def horario_desde_equipo(personas):
             })
     return {"exito": True, "turnos": dict(TURNOS),
             "asignaciones": asignaciones, "roles": roles,
-            "almuerzos": dict(ALMUERZOS), "vacaciones": [],
+            "almuerzos": dict(ALMUERZOS), "vacaciones": [], "auxiliares": [],
             "estados_leyenda": [], "fuente": "equipo"}
 
 
@@ -417,12 +443,6 @@ def _semana_actual(ahora=None):
     return f"Semana del {lunes.day} de {mes_ini} al {domingo.day} de {mes_fin} de {domingo.year}"
 
 
-def _rol_cubrible(rol):
-    """Soporte cubre a los vendedores de redes. Si no hay rol definido se asume
-    que sí (mejor avisar de más que dejar un chat sin atender)."""
-    n = _norm(rol)
-    return not any(x in n for x in _ROLES_NO_CUBRIR)
-
 
 def _fmt_hora(h):
     hh = int(h) % 24
@@ -436,7 +456,7 @@ def _aplicar_ajustes(asignaciones, ajustes, dia_idx, roles):
     """Superpone los ajustes del día sobre el plan de la semana.
 
     El plan (la hoja) no se toca: aquí se decide qué rige HOY. Devuelve la lista
-    de asignaciones del día ya ajustada, marcando lo que cambió para que soporte
+    de asignaciones del día ya ajustada, marcando lo que cambió para que se
     entienda por qué el panel dice algo distinto al cuadro.
     """
     del_dia, vistos = [], set()
@@ -489,53 +509,35 @@ def _ts_hoy(ahora, hora_decimal):
     return base.timestamp()
 
 
-def calcular_cobertura(horario, ahora, presencia=None, estados=None,
-                       novedades=None, coberturas=None, ajustes=None):
+def calcular_panel(horario, ahora, presencia=None, estados=None,
+                   novedades=None, ajustes=None):
     """Cruza el horario del día con la realidad (señal, estado, novedades) y la
     hora actual. No toca red ni disco, y la ventana de turno se prueba con
-    cualquier valor de `ahora` — OJO: los "minutos sin señal" y el vencimiento
-    de "Yo lo cubro" (90 min) sí usan el reloj real del proceso (`time.time()`),
-    no `ahora`, porque el único llamador real (`app.py`) siempre los pasa
-    sincronizados. Una prueba que fije `ahora` lejos de la fecha real, o un
-    futuro modo de recálculo histórico con hora simulada, dará esos dos datos
-    incoherentes con la ventana de turno — no es un bug hoy, pero es la razón
-    por la que las pruebas de este archivo también calculan sus timestamps de
-    presencia/cobertura con `time.time()`, no relativos a `ahora`.
+    cualquier valor de `ahora` — OJO: los "minutos sin señal" sí usan el reloj
+    real del proceso (`time.time()`), no `ahora`, porque el único llamador real
+    (`app.py`) siempre los pasa sincronizados. Una prueba que fije `ahora`
+    lejos de la fecha real dará ese dato incoherente con la ventana de turno.
 
-    Listas que ve soporte:
-      - requieren_cobertura: sin señal y SIN cobertura vigente → alarma roja.
-        Tiene cuatro momentos, con distintas velocidades:
-          1) Durante su turno (o recién pasada la tolerancia al entrar): el
-             más urgente — "Yo lo cubro" dura VENCIMIENTO_COBERTURA_MIN.
-          2) Turno 2/3 ANTES de entrar, desde que abre el turno 1: puede
-             haber chats de ayer sin revisar.
-          3) Cualquier turno DESPUÉS de terminar, o compensatorio/ausencia/
-             cambio de horario todo el día: puede haber un cliente en
-             proceso sin atender, mientras el día operativo siga.
-          4) Vacaciones (columna aparte en la hoja): manda sobre cualquier
-             otra cosa que diga el cuadro para esa persona.
-        Los momentos 2 y 3 usan "Yo lo cubro" con VENCIMIENTO_PENDIENTES_MIN
-        (más largo que el de "en turno", porque es menos urgente). Vacaciones
-        es distinto: se revisa UNA VEZ AL DÍA (se reinicia a medianoche, no
-        cada cierto número de minutos).
-      - ausencia_informada:  en turno con estado (almuerzo…) o novedad; O
-        sin señal en turno pero YA con "Yo lo cubro" vigente
-        (< VENCIMIENTO_COBERTURA_MIN). Si la cobertura vence y sigue sin
-        señal, vuelve a "Requieren cobertura".
-      - en_linea:            atendiendo (o quedándose ayudando), señal reciente
-      - por_entrar:          aún dentro de la tolerancia — nunca es urgente,
-        se puede cubrir de forma preventiva pero no expira ni alarma. Turno
-        2/3 con "Yo lo cubro" vigente de pendientes de ayer también cae acá.
+    El panel es INFORMATIVO: desde agosto de 2026 no existe el rol de soporte
+    (todos son vendedores) y nadie tiene que cubrir a nadie, así que no hay
+    alarma roja, ni "Yo lo cubro", ni vencimientos. Solo se muestra lo que se
+    puede afirmar: quién está conectado, quién avisó por qué no está, y a quién
+    no se espera hoy. Quien está en su turno y no ha dado señal no aparece en
+    ninguna lista — la falta de registro queda en el historial (y en Gestión),
+    no como un aviso que alguien tendría que atender.
+
+    Listas que devuelve:
+      - en_linea:            señal reciente (< UMBRAL_INACTIVO_MIN)
+      - ausencia_informada:  en turno pero con una explicación — estado propio
+        (almuerzo, zona presencial), sede presencial marcada en la hoja
+        (Santa Fe, El Tesoro, Mostrador) o una novedad reportada
+      - por_entrar:          su turno todavía no empieza
       - no_se_espera:        compensatorio / ausencia / cambio de horario /
-        turno terminado / vacaciones, todos con "Yo lo cubro" vigente — si
-        vence (o, en vacaciones, cuando pasa la medianoche) y sigue sin
-        señal, vuelve a "Requieren cobertura" en vez de quedarse tranquilo
-        para siempre.
+        vacaciones, y los turnos que ya terminaron
     """
     presencia = presencia or {}
     estados = estados or {}
     novedades = novedades or []
-    coberturas = coberturas or {}
     ajustes = ajustes or {}
 
     roles = horario.get("roles") or {}
@@ -543,39 +545,14 @@ def calcular_cobertura(horario, ahora, presencia=None, estados=None,
     clave_dia = "sem" if dia_idx <= 4 else ("sab" if dia_idx == 5 else "dom")
     ahora_h = ahora.hour + ahora.minute / 60.0
 
-    # Hora de cierre del día = la más tardía entre los 3 turnos (normalmente
-    # el fin del turno 3). Entre el fin del turno propio de alguien y el
-    # cierre, sigue apareciendo (como ausencia informada, con "Yo lo cubro")
-    # para que quede confirmado que alguien más se hizo cargo de sus chats —
-    # de cierre a la apertura del día siguiente no se rastrea nada.
+    # Hora de cierre del día = la más tardía entre los turnos. Pasada esa hora
+    # no se muestra a nadie: el día operativo terminó.
     _turnos_hoy = {**TURNOS, **(horario.get("turnos") or {})}
     cierre_dia = max(v.get(clave_dia, v.get("sem", (0.0, 0.0)))[1] for v in _turnos_hoy.values())
-    # Hora de apertura del día = inicio del turno 1 — de ahí en adelante puede
-    # haber chats de ayer sin revisar esperando a los de turno 2/3.
-    apertura_dia = _turnos_hoy.get(1, TURNOS[1]).get(clave_dia, TURNOS[1]["sem"])[0]
 
     vacaciones_set = {_norm(n) for n in horario.get("vacaciones", []) if _norm(n)}
 
-    def _procesar_vacacion(item, rol, cob):
-        """Vacaciones: informativo (Hoy no se espera), pero pide revisar
-        pendientes UNA VEZ AL DÍA — se reinicia a medianoche, no cada cierto
-        número de minutos como el resto de "pendientes"."""
-        item["vacaciones"] = True
-        item["etiqueta"] = "Vacaciones"
-        if not _rol_cubrible(rol):
-            res["no_se_espera"].append(item)
-            return
-        vigente_hoy = bool(cob) and datetime.fromtimestamp(cob["desde"]).date() == ahora.date()
-        if vigente_hoy:
-            item["estado_etq"] = "Vacaciones — ya revisado hoy"
-            res["no_se_espera"].append(item)
-        else:
-            item["cubierto_por"] = None
-            item["cubierto_desde"] = None
-            item["motivo"] = "está de vacaciones — revisar si tiene clientes pendientes de reasignar"
-            res["requieren_cobertura"].append(item)
-
-    res = {"requieren_cobertura": [], "ausencia_informada": [], "en_linea": [],
+    res = {"ausencia_informada": [], "en_linea": [],
            "por_entrar": [], "no_se_espera": [], "novedades": novedades,
            "ajustes": sorted(ajustes.values(), key=lambda x: x.get("ts", 0)),
            "dia": DIAS[dia_idx], "semana": _semana_actual(ahora),
@@ -595,22 +572,17 @@ def calcular_cobertura(horario, ahora, presencia=None, estados=None,
         # Vacaciones manda sobre cualquier otra cosa que diga el cuadro para
         # esta persona (turno normal, compensatorio, lo que sea).
         if k in vacaciones_set:
-            item = {"nombre": a["nombre"], "turno": a["turno"], "rol": rol,
-                    "estado_horario": "vacaciones", "etiqueta": "Vacaciones",
-                    "desde": "", "hasta": ""}
-            cob = coberturas.get(k)
-            if cob:
-                item["cubierto_por"] = cob.get("soporte")
-                item["cubierto_desde"] = cob.get("desde_hora")
-            _procesar_vacacion(item, rol, cob)
+            res["no_se_espera"].append(
+                {"nombre": a["nombre"], "turno": a["turno"], "rol": rol,
+                 "estado_horario": "vacaciones", "etiqueta": "Vacaciones",
+                 "desde": "", "hasta": "", "vacaciones": True})
             continue
 
         info = ESTADOS.get(a["estado"], ESTADOS["normal"])
         ventana = (horario.get("turnos", {}).get(a["turno"])
                    or TURNOS.get(a["turno"], TURNOS[1]))
         ini, fin = ventana.get(clave_dia, ventana.get("sem", (8.0, 16.0)))
-        # Un ajuste de entrada tardía corre el inicio: antes de esa hora no se
-        # alerta, porque su llegada más tarde está autorizada.
+        # Un ajuste de entrada tardía corre el inicio de su turno de hoy.
         ini_aj = _hora_a_decimal(a.get("entrada_ajustada"))
         if ini_aj is not None:
             ini = ini_aj
@@ -621,70 +593,25 @@ def calcular_cobertura(horario, ahora, presencia=None, estados=None,
             item["ajuste"] = a["ajuste"]
             item["ajuste_nota"] = a.get("ajuste_nota", "")
 
-        cob = coberturas.get(k)
-        if cob:
-            item["cubierto_por"] = cob.get("soporte")
-            item["cubierto_desde"] = cob.get("desde_hora")
-
+        # Compensatorio / Ausencia / Cambio de horario: hoy no viene.
         if not info["cubrir"]:
-            # Compensatorio/Ausencia/Cambio de horario: no viene hoy, pero
-            # puede tener un cliente en proceso sin atender — mismo ciclo de
-            # 2.5h que "turno terminado" (ver más abajo), no es informativo
-            # puro: si nadie confirma, sí pide revisión.
             item["no_viene_hoy"] = True
-            if not _rol_cubrible(rol):
-                res["no_se_espera"].append(item)
-                continue
-            vigente_pend = bool(cob) and (time.time() - cob["desde"]) / 60.0 <= VENCIMIENTO_PENDIENTES_MIN
-            if vigente_pend:
-                item["estado_etq"] = "Pendientes ya revisados"
-                res["no_se_espera"].append(item)
-            else:
-                item["cubierto_por"] = None
-                item["cubierto_desde"] = None
-                item["motivo"] = f"{info['etiqueta']} hoy, puede tener clientes en proceso sin atender"
-                res["requieren_cobertura"].append(item)
+            res["no_se_espera"].append(item)
             continue
 
-        # Turno 2/3, antes de entrar hoy, con el turno 1 ya abierto: puede
-        # tener chats pendientes de ayer sin revisar. A diferencia del resto
-        # de "aún no entran" (nunca urgente), esto SÍ pide cobertura cada
-        # VENCIMIENTO_PENDIENTES_MIN minutos, con el mismo mecanismo de
-        # "Yo lo cubro" y vencimiento que el resto de la alarma roja.
-        if a["turno"] in (2, 3) and _rol_cubrible(rol) and apertura_dia <= ahora_h < ini:
-            vigente_pend = bool(cob) and (time.time() - cob["desde"]) / 60.0 <= VENCIMIENTO_PENDIENTES_MIN
-            if vigente_pend:
-                item["estado_etq"] = "Pendientes de ayer ya revisados"
-                res["por_entrar"].append(item)
-            else:
-                item["cubierto_por"] = None
-                item["cubierto_desde"] = None
-                item["pendientes_ayer"] = True
-                item["motivo"] = f"entra a las {item['desde']} pero puede tener chats pendientes de ayer sin revisar"
-                res["requieren_cobertura"].append(item)
-            continue
-
-        # Aún no entra: antes de que se cumpla la tolerancia nunca es urgente
-        # (se puede cubrir de forma preventiva con el botón, pero no exige
-        # nada todavía — por eso no importa si la cobertura está vencida acá).
-        if ahora_h < ini + TOLERANCIA_MIN / 60.0:
+        if ahora_h < ini:
             res["por_entrar"].append(item)
             continue
 
-        # Cierre del día: de acá al turno 1 de mañana no se rastrea nada.
-        if ahora_h > cierre_dia:
-            continue
+        dentro_turno = ahora_h <= fin  # False = su turno ya terminó, el día sigue
 
-        dentro_turno = ahora_h <= fin  # False = su turno ya terminó, pero el día sigue
-
-        # Sede presencial: plan conocido de antemano, no depende de señal ni
-        # de novedad — sus chats están sin atender todo el turno.
+        # Sede presencial marcada en la hoja: está trabajando, pero no en
+        # chats, y eso se sabe de antemano — no depende de señal ni de novedad.
         if dentro_turno and info.get("sede"):
-            if _rol_cubrible(rol):
-                item["estado"] = a["estado"]
-                item["estado_etq"] = info["etiqueta"]
-                item["sede"] = True
-                res["ausencia_informada"].append(item)
+            item["estado"] = a["estado"]
+            item["estado_etq"] = info["etiqueta"]
+            item["sede"] = True
+            res["ausencia_informada"].append(item)
             continue
 
         pres = presencia.get(k) or {}
@@ -699,7 +626,7 @@ def calcular_cobertura(horario, ahora, presencia=None, estados=None,
 
         if dentro_turno:
             # Almuerzo automático: dentro de la ventana de su turno se marca
-            # solo, sin que el asesor tenga que seleccionarlo — lo único que
+            # solo, sin que la persona tenga que seleccionarlo — lo único que
             # lo invalida es haber marcado "Desconectado" explícitamente.
             alm_ini, alm_fin = (horario.get("almuerzos", {}).get(a["turno"])
                                 or ALMUERZOS.get(a["turno"], (None, None)))
@@ -707,28 +634,19 @@ def calcular_cobertura(horario, ahora, presencia=None, estados=None,
             if alm_ini is not None and alm_ini <= ahora_h < alm_fin and not desconectado:
                 est = {"estado": "almuerzo", "ts": _ts_hoy(ahora, alm_ini)}
 
-            # 1) Estado explícito que dice que no está atendiendo → ausencia informada
+            # 1) Estado explícito que dice que no está atendiendo
             if est and not ESTADOS_ASESOR.get(est["estado"], {}).get("atiende", True):
                 item["estado"] = est["estado"]
                 item["estado_etq"] = ESTADOS_ASESOR[est["estado"]]["etiqueta"]
                 item["desde_estado"] = datetime.fromtimestamp(est["ts"]).strftime("%I:%M %p")
                 if est["estado"] == ESTADO_PRESENCIAL:
                     item["sede"] = True
-                if _rol_cubrible(rol):
-                    res["ausencia_informada"].append(item)
+                res["ausencia_informada"].append(item)
                 continue
 
-        # 2) Novedad reportada (ausencia, llegada tarde…) → ausencia informada
-        if nov and (mins is None or mins > UMBRAL_INACTIVO_MIN):
-            item["novedad"] = nov.get("tipo")
-            item["nota"] = nov.get("nota", "")
-            if nov.get("tipo") == "Apoyo a presencial":
-                item["sede"] = True
-            if _rol_cubrible(rol):
-                res["ausencia_informada"].append(item)
-            continue
-
-        # 3) Señal reciente → está trabajando (o se quedó ayudando tras su turno)
+        # 2) Señal reciente → está trabajando (o se quedó ayudando tras su
+        # turno). Va antes que la novedad: si la persona está dando señal, eso
+        # pesa más que un permiso reportado que a lo mejor ya no aplica.
         if mins is not None and mins <= UMBRAL_INACTIVO_MIN:
             if est:
                 item["estado"] = est["estado"]
@@ -736,67 +654,51 @@ def calcular_cobertura(horario, ahora, presencia=None, estados=None,
             res["en_linea"].append(item)
             continue
 
-        # 4) Sin señal, sin explicación:
-        if not _rol_cubrible(rol):
-            continue                                # soporte/jefe/web: no se cubre
-
-        if not dentro_turno:
-            # Su turno ya terminó, pero el día operativo sigue: puede haber
-            # un cliente en proceso sin atender. Mismo mecanismo que "antes
-            # de entrar" (ver arriba): cada VENCIMIENTO_PENDIENTES_MIN
-            # minutos sin que soporte confirme, se pide revisión de nuevo —
-            # un ciclo más largo que el de "en turno" porque ya no es tan
-            # urgente, pero tampoco se olvida solo porque el horario terminó.
-            item["turno_terminado"] = True
-            vigente_pend = bool(cob) and (time.time() - cob["desde"]) / 60.0 <= VENCIMIENTO_PENDIENTES_MIN
-            if vigente_pend:
-                item["estado_etq"] = "Pendientes ya revisados"
-                res["no_se_espera"].append(item)
-            else:
-                item["cubierto_por"] = None
-                item["cubierto_desde"] = None
-                item["motivo"] = f"su turno terminó a las {item['hasta']} y puede tener clientes en proceso sin atender"
-                res["requieren_cobertura"].append(item)
+        # Pasado el cierre del día no queda nada que informar de quien no dio
+        # señal: se deja de mostrar hasta que abra el día siguiente. La
+        # comprobación va DESPUÉS de "En línea" a propósito — quien sí está
+        # dando señal se sigue mostrando aunque sea más tarde del cierre,
+        # porque se quedó trabajando y eso es un hecho, no una suposición.
+        # (Con el turno 3 en 10am-6pm, el cierre de un día de semana bajó a las
+        # 7pm: con la comprobación antes, el panel quedaba en blanco a las 7:01
+        # aunque hubiera gente conectada.)
+        if ahora_h > cierre_dia:
             continue
 
-        # Dentro del turno, sin señal: necesita que alguien confirme la
-        # cobertura. Si ya hay una reclamada y vigente (< 90 min desde "Yo lo
-        # cubro"), se muestra sin alarma; si nunca la hubo, o ya venció,
-        # queda (o vuelve a quedar) en "Requieren cobertura".
-        motivo = ("sin señal desde el inicio del turno" if mins is None
-                  else f"sin actividad hace {int(mins)} min")
-
-        vigente = bool(cob) and (time.time() - cob["desde"]) / 60.0 <= VENCIMIENTO_COBERTURA_MIN
-        if vigente:
-            item["estado_etq"] = motivo.capitalize()
+        # 3) Novedad reportada (ausencia, llegada tarde, capacitación…)
+        if nov:
+            item["novedad"] = nov.get("tipo")
+            item["nota"] = nov.get("nota", "")
+            if nov.get("tipo") == "Apoyo a presencial":
+                item["sede"] = True
             res["ausencia_informada"].append(item)
-        else:
-            item["cubierto_por"] = None    # si había una reclamación, ya venció: se pide de nuevo
-            item["cubierto_desde"] = None
-            item["motivo"] = motivo
-            res["requieren_cobertura"].append(item)
+            continue
+
+        # 4) Su turno ya terminó y el día operativo sigue: informativo.
+        if not dentro_turno:
+            item["turno_terminado"] = True
+            res["no_se_espera"].append(item)
+            continue
+
+        # En su turno y sin señal ni explicación: no se muestra en ninguna
+        # lista. La falta de registro queda en el historial, para Gestión.
 
     # Vacaciones sin ninguna fila en el cuadro esta semana (persona que solo
-    # vive en esta lista, no tiene turno asignado): igual se procesa.
+    # vive en esa lista, sin turno asignado): igual se muestra.
     nombres_procesados_hoy = {_norm(a["nombre"]) for a in asignaciones_hoy}
     for nombre_original in horario.get("vacaciones", []):
         k = _norm(nombre_original)
         if not k or k in nombres_procesados_hoy:
             continue
-        rol = roles.get(k, "")
-        item = {"nombre": nombre_original, "turno": 0, "rol": rol,
-                "estado_horario": "vacaciones", "etiqueta": "Vacaciones",
-                "desde": "", "hasta": ""}
-        cob = coberturas.get(k)
-        if cob:
-            item["cubierto_por"] = cob.get("soporte")
-            item["cubierto_desde"] = cob.get("desde_hora")
-        _procesar_vacacion(item, rol, cob)
+        res["no_se_espera"].append(
+            {"nombre": nombre_original, "turno": 0, "rol": roles.get(k, ""),
+             "estado_horario": "vacaciones", "etiqueta": "Vacaciones",
+             "desde": "", "hasta": "", "vacaciones": True})
 
-    res["requieren_cobertura"].sort(key=lambda x: (bool(x.get("cubierto_por")), x["turno"], x["nombre"]))
-    res["ausencia_informada"].sort(key=lambda x: (bool(x.get("cubierto_por")), x["nombre"]))
+    res["ausencia_informada"].sort(key=lambda x: x["nombre"])
     res["en_linea"].sort(key=lambda x: x["nombre"])
     res["por_entrar"].sort(key=lambda x: (x["turno"], x["nombre"]))
+    res["no_se_espera"].sort(key=lambda x: (x["turno"], x["nombre"]))
     return res
 
 
@@ -806,14 +708,24 @@ def clave(nombre):
 
 
 def personas_del_horario(horario):
-    """Nombres únicos del horario, para el selector del panel."""
+    """Nombres únicos del horario, para el selector del panel. Incluye a los
+    auxiliares de bodega, que usan la calculadora aunque no tengan turno en el
+    cuadro (por eso no aparecen en las listas del panel)."""
     vistos, out = set(), []
-    for a in horario.get("asignaciones", []):
-        k = _norm(a["nombre"])
-        if k not in vistos:
+    nombres = [a["nombre"] for a in horario.get("asignaciones", [])]
+    nombres += horario.get("auxiliares") or []
+    for nombre in nombres:
+        k = _norm(nombre)
+        if k and k not in vistos:
             vistos.add(k)
-            out.append(a["nombre"])
+            out.append(nombre)
     return sorted(out)
+
+
+def es_auxiliar_bodega(horario, nombre):
+    """True si ese nombre está en la columna 'Auxiliares de bodega' de la hoja."""
+    k = _norm(nombre)
+    return bool(k) and k in {_norm(n) for n in (horario.get("auxiliares") or [])}
 
 
 def obtener_horario(ruta_credenciales):
@@ -836,10 +748,10 @@ def obtener_horario(ruta_credenciales):
         if "error" in res:
             return res
 
-        # Roles: la hoja opcional 'Roles' se SUMA a los detectados por "*" en
-        # el nombre (no los reemplaza) — así conviven ambos mecanismos. Por
-        # eso es setdefault y no update: si el "*" ya dijo Soporte, una fila
-        # vieja o mal tipeada en la hoja Roles no debe pisarlo.
+        # Roles: la hoja opcional 'Roles' es hoy la única fuente de roles
+        # (el "*" del cuadro dejó de asignar ninguno). Se usa setdefault por
+        # si el cuadro vuelve a aportar roles en el futuro: lo que venga de
+        # ahí manda sobre una fila vieja o mal tipeada de esta hoja.
         try:
             meta_r = ss.fetch_sheet_metadata(params={
                 "includeGridData": "true", "ranges": f"'{_HOJA_ROLES}'!A1:C60",

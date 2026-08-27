@@ -1,15 +1,19 @@
-"""Almacén del chat center: presencia, estados, novedades y coberturas.
+"""Almacén del chat center: presencia, estados y novedades.
 
 SQLite en el volumen del servidor. A diferencia del almacén anterior (un JSON
 que se borraba cada día), aquí **queda historial**: es lo que permite que la
-jefa mire puntualidad, reincidencias y minutos sin cobertura por semana, y lo
-que la Torre de Control consume para su análisis.
+jefa mire puntualidad y reincidencias por semana, y lo que la Torre de Control
+consume para su análisis.
 
 Qué guarda:
   - presencia:  última señal de cada persona por día (la envía la calculadora)
-  - estados:    cada cambio de estado del asesor (disponible, almuerzo, …)
-  - novedades:  ausencias/retrasos con franja afectada y quién las cubrió
-  - coberturas: quién cubrió a quién y por cuánto tiempo
+  - estados:    cada cambio de estado del vendedor (en chat, almuerzo, …)
+  - novedades:  ausencias/retrasos con la franja afectada
+
+Las tablas `coberturas` y `alertas` ya no se escriben: el panel dejó de pedir
+coberturas en agosto de 2026 (se eliminó el rol de soporte, todos son
+vendedores). Se conservan porque guardan el histórico de lo que sí pasó y la
+Torre de Control las sigue leyendo.
 
 Solo datos de coordinación: primer nombre y marcas de tiempo. Nada sensible.
 """
@@ -38,8 +42,8 @@ ESTADOS_ASESOR = {
     "en_chat": {"etiqueta": "En chat", "atiende": True},
     # Cuando la zona presencial se llena (o falta una vendedora presencial), un
     # vendedor de chats pasa a atender allá. No es una ausencia: es un traslado
-    # por prioridad de cliente presencial, y sus chats quedan sin atender, así
-    # que soporte debe cubrirlos. Se mide aparte porque frena la operación.
+    # por prioridad de cliente presencial, y sus chats quedan sin atender. Se
+    # mide aparte porque frena la operación.
     "presencial": {"etiqueta": "En zona presencial", "atiende": False},
     "almuerzo": {"etiqueta": "Almuerzo", "atiende": False},
     # No seleccionable a mano (queda fuera de "estados_posibles" en la API):
@@ -54,11 +58,10 @@ TIPOS_NOVEDAD = ["Ausencia", "Llegada tarde", "Salida anticipada", "Permiso",
                  "Incapacidad", "Cita médica", "Apoyo a presencial",
                  "Capacitación", "Reunión", "Otro"]
 
-# Novedades que dejan un puesto sin atender: el panel suena para avisar a soporte.
-# Una "Llegada tarde" o una "Cita médica" avisada no despiertan la alarma.
-# "Apoyo a presencial", "Capacitación" y "Reunión" también avisan: dejan chats
-# sin atender aunque la persona esté "trabajando", y es justo lo que soporte
-# necesita saber para entrar a cubrir.
+# Novedades que dejan un puesto sin atender: el panel avisa con un pitido
+# cuando entra una de estas. Una "Llegada tarde" o una "Cita médica" avisada
+# no suenan. "Apoyo a presencial", "Capacitación" y "Reunión" sí: dejan chats
+# sin atender aunque la persona esté "trabajando".
 TIPOS_IMPORTANTES = {"Ausencia", "Incapacidad", "Salida anticipada",
                      "Apoyo a presencial", "Capacitación", "Reunión"}
 
@@ -162,8 +165,12 @@ def _init():
 # Permite trabajar SIN la hoja de horarios: la jefa registra aquí a su equipo y
 # el panel ya tiene nombres, roles y turnos. Si además existe la hoja, esa manda
 # (trae compensatorios y cambios por color).
-ROLES = ["Red social", "Página web", "Soporte", "Venta presencial",
-         "Apoyo jefatura / Soporte", "Jefa de ventas"]
+# El rol ya no cambia el comportamiento del panel (nadie cubre a nadie): es
+# una etiqueta para el resumen de Gestión. Se dejan las de soporte porque hay
+# gente vieja guardada con ellas; se pueden quitar cuando ya no aparezcan.
+ROLES = ["Red social", "Página web", "Venta presencial",
+         "Auditoría de calidad", "Soporte", "Apoyo jefatura / Soporte",
+         "Jefa de ventas"]
 
 
 def guardar_persona(nombre, rol="Red social", turno=1, activa=True, orden=None):
@@ -406,143 +413,6 @@ def quitar_ajuste(nombre, tipo=None, fecha=None):
 
 
 # =======================================================
-# COBERTURAS ("yo lo cubro")
-# =======================================================
-def abrir_cobertura(titular, soporte):
-    """Soporte declara que está cubriendo a un titular. Si ya había una abierta
-    para ese titular hoy, se cierra antes (una cobertura activa por persona)."""
-    kt, ks = clave(titular), clave(soporte)
-    if not kt or not ks:
-        return None
-    f, ahora = hoy(), time.time()
-    with _con() as cx:
-        cx.execute("UPDATE coberturas SET hasta=? WHERE fecha=? AND clave_titular=? AND hasta IS NULL",
-                   (ahora, f, kt))
-        cur = cx.execute("""
-            INSERT INTO coberturas (clave_titular, titular, clave_soporte, soporte, fecha, desde)
-            VALUES (?,?,?,?,?,?)
-        """, (kt, str(titular).strip()[:40], ks, str(soporte).strip()[:40], f, ahora))
-        # La novedad activa (si hay) queda marcada con quién cubre
-        cx.execute("UPDATE novedades SET cubierto_por=? WHERE fecha=? AND clave=? AND activa=1",
-                   (str(soporte).strip()[:40], f, kt))
-        return cur.lastrowid
-
-
-def cerrar_cobertura(titular):
-    kt, f = clave(titular), hoy()
-    with _con() as cx:
-        cur = cx.execute("UPDATE coberturas SET hasta=? WHERE fecha=? AND clave_titular=? AND hasta IS NULL",
-                         (time.time(), f, kt))
-        return cur.rowcount
-
-
-def coberturas_activas(fecha=None):
-    """{clave_titular: {'soporte':…, 'desde':…}} de las coberturas abiertas."""
-    with _con() as cx:
-        filas = cx.execute("""
-            SELECT clave_titular, titular, soporte, desde FROM coberturas
-            WHERE fecha=? AND hasta IS NULL
-        """, (fecha or hoy(),)).fetchall()
-    out = {}
-    for r in filas:
-        d = dict(r)
-        d["desde_hora"] = datetime.fromtimestamp(d["desde"]).strftime("%I:%M %p")
-        out[d["clave_titular"]] = d
-    return out
-
-
-# =======================================================
-# ALERTAS ("Requieren cobertura"): trazabilidad de cumplimiento
-# =======================================================
-# calcular_cobertura() es una función pura (no toca disco), así que quien la
-# llama (api_turnos_estado, cada ~8s) es quien avisa aquí quién está AHORA en
-# la lista roja. Se abre un episodio la primera vez que alguien aparece ahí y
-# se cierra en cuanto deja de estar — así queda el tiempo real que pasó sin
-# que nadie confirmara su cobertura, que antes se perdía apenas se refrescaba
-# el panel. Sin esto no hay forma de medir qué tan rápido reacciona soporte.
-def registrar_alertas_activas(nombres_activos):
-    """Sincroniza los episodios abiertos con quién está AHORA mismo en
-    'Requieren cobertura'. Idempotente: llamarlo seguido no duplica nada."""
-    f, ahora = hoy(), time.time()
-    activos = {clave(n): n for n in (nombres_activos or []) if clave(n)}
-    with _con() as cx:
-        # Episodios de un día anterior que nunca se cerraron (nadie volvió a
-        # abrir el panel ese día antes de medianoche): sin una hora de cierre
-        # real, cuentan 0 minutos — preferible a dejarlos con ts_fin NULL para
-        # siempre, que hace que minutos_sin_cobertura() los lea distinto según
-        # cuándo se consulte (mientras "hoy" seguía siendo ese día sí sumaban
-        # tiempo real; en cuanto avanza la fecha, se leen como si no hubieran
-        # pasado nada, y ese cambio de lectura es el bug real, no el 0 en sí).
-        cx.execute("UPDATE alertas SET ts_fin = ts_inicio WHERE fecha != ? AND ts_fin IS NULL", (f,))
-        abiertas = {r["clave"]: r["id"] for r in cx.execute(
-            "SELECT id, clave FROM alertas WHERE fecha=? AND ts_fin IS NULL", (f,)).fetchall()}
-        for k, n in activos.items():
-            if k not in abiertas:
-                cx.execute("INSERT INTO alertas (clave, nombre, fecha, ts_inicio) VALUES (?,?,?,?)",
-                           (k, n, f, ahora))
-        for k, id_ in abiertas.items():
-            if k not in activos:
-                cx.execute("UPDATE alertas SET ts_fin=? WHERE id=?", (ahora, id_))
-
-
-def minutos_sin_cobertura(desde, hasta):
-    """Minutos totales por persona en 'Requieren cobertura' dentro del rango
-    (episodios cerrados cuentan su duración real; uno abierto de hoy cuenta
-    hasta ahora). Es la métrica de incumplimiento de horario del asesor."""
-    with _con() as cx:
-        filas = cx.execute("""
-            SELECT clave, nombre, fecha, ts_inicio, ts_fin FROM alertas
-            WHERE fecha BETWEEN ? AND ?
-        """, (desde, hasta)).fetchall()
-    ahora, hoy_txt, out = time.time(), hoy(), {}
-    for r in filas:
-        fin = r["ts_fin"] if r["ts_fin"] is not None else (ahora if r["fecha"] == hoy_txt else r["ts_inicio"])
-        mins = max(0.0, (fin - r["ts_inicio"]) / 60.0)
-        d = out.setdefault(r["clave"], {"nombre": r["nombre"], "minutos": 0.0, "episodios": 0})
-        d["minutos"] += mins
-        d["episodios"] += 1
-    for d in out.values():
-        d["minutos"] = int(round(d["minutos"]))
-    return out
-
-
-def tiempos_respuesta(desde, hasta):
-    """Por cada cobertura reclamada, cuánto tiempo llevaba la persona en
-    'Requieren cobertura' antes de que soporte le diera clic — el tiempo de
-    respuesta real, no solo un conteo de cuántas veces cubrió."""
-    with _con() as cx:
-        cobs = cx.execute("""
-            SELECT clave_titular, soporte, desde FROM coberturas
-            WHERE fecha BETWEEN ? AND ?
-        """, (desde, hasta)).fetchall()
-        alertas = cx.execute("""
-            SELECT clave, ts_inicio, ts_fin FROM alertas
-            WHERE fecha BETWEEN ? AND ?
-        """, (desde, hasta)).fetchall()
-
-    por_persona = {}
-    for a in alertas:
-        por_persona.setdefault(a["clave"], []).append(a)
-
-    resp = {}
-    for c in cobs:
-        candidatas = [a for a in por_persona.get(c["clave_titular"], [])
-                      if a["ts_inicio"] <= c["desde"] and (a["ts_fin"] is None or a["ts_fin"] >= c["desde"] - 5)]
-        if not candidatas:
-            continue                                # se cubrió sin que hubiera quedado en rojo (poco común)
-        alerta = min(candidatas, key=lambda a: c["desde"] - a["ts_inicio"])
-        minutos = max(0.0, (c["desde"] - alerta["ts_inicio"]) / 60.0)
-        k = clave(c["soporte"])
-        d = resp.setdefault(k, {"nombre": c["soporte"], "veces": 0, "min_totales": 0.0})
-        d["veces"] += 1
-        d["min_totales"] += minutos
-    for d in resp.values():
-        d["min_promedio"] = round(d["min_totales"] / d["veces"], 1) if d["veces"] else 0
-        d.pop("min_totales", None)
-    return resp
-
-
-# =======================================================
 # HISTORIAL / MÉTRICAS (para la jefa y para la Torre)
 # =======================================================
 def rango_semana(fecha=None):
@@ -591,20 +461,16 @@ def minutos_por_estado(desde, hasta, estado):
 
 def resumen(desde, hasta):
     """Métricas por persona en un rango de fechas (inclusive), para el análisis:
-    días con señal, hora de entrada más frecuente, novedades por tipo,
-    minutos cubierto y veces que fue cubierto."""
+    días con señal, hora de entrada más frecuente, novedades por tipo y minutos
+    desviados a la zona presencial."""
     with _con() as cx:
         pres = cx.execute("""
             SELECT clave, nombre, fecha, primera_ts FROM presencia
             WHERE fecha BETWEEN ? AND ? ORDER BY fecha
         """, (desde, hasta)).fetchall()
         novs = cx.execute("""
-            SELECT clave, nombre, tipo, fecha, cubierto_por FROM novedades
+            SELECT clave, nombre, tipo, fecha FROM novedades
             WHERE fecha BETWEEN ? AND ? AND activa=1
-        """, (desde, hasta)).fetchall()
-        cobs = cx.execute("""
-            SELECT clave_titular, titular, soporte, desde, hasta, fecha FROM coberturas
-            WHERE fecha BETWEEN ? AND ?
         """, (desde, hasta)).fetchall()
 
     personas = {}
@@ -613,10 +479,7 @@ def resumen(desde, hasta):
         if k not in personas:
             personas[k] = {"nombre": nombre, "dias_con_senal": 0, "entradas": [],
                            "novedades": {}, "total_novedades": 0,
-                           "veces_cubierto": 0, "minutos_cubierto": 0,
-                           "veces_cubriendo": 0, "minutos_presencial": 0,
-                           "minutos_sin_cobertura": 0, "episodios_sin_cobertura": 0,
-                           "veces_respondio": 0, "min_respuesta_prom": 0}
+                           "minutos_presencial": 0}
         return personas[k]
 
     for r in pres:
@@ -629,42 +492,10 @@ def resumen(desde, hasta):
         it["novedades"][r["tipo"]] = it["novedades"].get(r["tipo"], 0) + 1
         it["total_novedades"] += 1
 
-    hoy_txt = hoy()
-    for r in cobs:
-        it = item(r["clave_titular"], r["titular"])
-        it["veces_cubierto"] += 1
-        # Si nunca se liberó (a alguien se le olvidó "dejar de cubrir"), solo
-        # se cuenta hasta ahora mientras sea de HOY — de lo contrario, cada
-        # vez que se abre este resumen la cifra seguiría creciendo contra el
-        # reloj actual para una cobertura de hace semanas. Ver minutos_por_estado.
-        if r["hasta"] is not None:
-            fin = r["hasta"]
-        elif r["fecha"] == hoy_txt:
-            fin = time.time()
-        else:
-            fin = r["desde"]
-        it["minutos_cubierto"] += max(0, int((fin - r["desde"]) / 60))
-        sop = item(clave(r["soporte"]), r["soporte"])
-        sop["veces_cubriendo"] += 1
-
     # Tiempo que se desvió de chats a la zona presencial (prioridad de cliente
     # presencial): es el costo operativo que la jefa necesita ver.
     for k, v in minutos_por_estado(desde, hasta, ESTADO_PRESENCIAL).items():
         item(k, v["nombre"])["minutos_presencial"] = v["minutos"]
-
-    # Cumplimiento de horario del asesor: minutos reales en "Requieren
-    # cobertura" (no solo cuántas veces lo cubrieron, sino cuánto tiempo
-    # pasó sin que nadie confirmara).
-    for k, v in minutos_sin_cobertura(desde, hasta).items():
-        it = item(k, v["nombre"])
-        it["minutos_sin_cobertura"] = v["minutos"]
-        it["episodios_sin_cobertura"] = v["episodios"]
-
-    # Desempeño de soporte: qué tan rápido reacciona, no solo cuántas veces.
-    for k, v in tiempos_respuesta(desde, hasta).items():
-        it = item(k, v["nombre"])
-        it["veces_respondio"] = v["veces"]
-        it["min_respuesta_prom"] = v["min_promedio"]
 
     for it in personas.values():
         it["entrada_tipica"] = (sorted(it["entradas"])[len(it["entradas"]) // 2]
@@ -675,9 +506,7 @@ def resumen(desde, hasta):
             "personas": sorted(personas.values(), key=lambda x: x["nombre"]),
             "totales": {
                 "novedades": sum(p["total_novedades"] for p in personas.values()),
-                "minutos_cubierto": sum(p["minutos_cubierto"] for p in personas.values()),
                 "minutos_presencial": sum(p["minutos_presencial"] for p in personas.values()),
-                "minutos_sin_cobertura": sum(p["minutos_sin_cobertura"] for p in personas.values()),
                 "personas": len(personas),
             }}
 
@@ -692,6 +521,8 @@ def historial(desde, hasta):
             "presencia": tabla("SELECT * FROM presencia WHERE fecha BETWEEN ? AND ?"),
             "estados": tabla("SELECT * FROM estados WHERE fecha BETWEEN ? AND ? ORDER BY ts"),
             "novedades": tabla("SELECT * FROM novedades WHERE fecha BETWEEN ? AND ?"),
+            # Histórico: ya no se escriben coberturas nuevas, pero la Torre
+            # sigue esperando la tabla (y las de antes siguen siendo válidas).
             "coberturas": tabla("SELECT * FROM coberturas WHERE fecha BETWEEN ? AND ?"),
         }
 

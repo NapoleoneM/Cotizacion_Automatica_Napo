@@ -141,7 +141,7 @@ if (typeof ligarNombre !== "undefined") ligarNombre;  // no-op guard
 // =====================================================
 const SUBTIPOS = {
   "Nacional": ["Corriente", "Especial", "Fabricación"],
-  "Italiano": ["Recargo +1", "Recargo +2", "Recargo +3", "Recargo +4"],
+  "Italiano": ["Recargo +1", "Recargo +2", "Recargo +3", "Recargo +4", "Recargo +5"],
   "Bolas": ["Lisa contado", "Lisa crédito", "Diamantada contado", "Diamantada crédito"],
 };
 const filasMay = [], filasOtros = [];
@@ -268,6 +268,33 @@ function poblarCalidadesTienda(calidades) {
 
 function fmtPesos(n) { return `$${n.toLocaleString("es-CO").replace(/,/g, ".")}`; }
 
+// Cifras de bodega, en el mismo orden en que se cargan en EFFI.
+const CAMPOS_BODEGA = [
+  ["Costo", "costo", "EFFI · Costo (S)"],
+  ["Precio mínimo venta", "precio_minimo", "EFFI · Precio mínimo (T) — costo +5%"],
+  ["Valor CO.", "valor_co", "Inputs · Valor CO. (M) — el mismo precio de tienda"],
+  ["Tarifa 1", "tarifa_1", "EFFI · Tarifa 1 (AB) — Valor CO sin IVA"],
+];
+
+// El bloque solo aparece si el servidor mandó las cifras. Quien decide es el
+// servidor (auxiliar de bodega + "En zona presencial"), no este archivo.
+function pintarBodega(b, calidad) {
+  const tarjeta = $("#tarjeta-bodega");
+  tarjeta.hidden = !b;
+  if (!b) return;
+  const grid = $("#bodega-grid");
+  grid.innerHTML = "";
+  CAMPOS_BODEGA.forEach(([etq, clave, ayuda]) => {
+    const fila = el("div", "bodega-fila");
+    fila.title = ayuda;
+    fila.append(el("span", "bodega-etq", etq));
+    fila.append(el("span", "bodega-val", fmtPesos(b[clave])));
+    grid.append(fila);
+  });
+  $("#criterio-bodega").textContent =
+    `Costo por gramo: ${fmtPesos(b.costo_gr)} — ${calidad}. Modelo de precio "Pesado".`;
+}
+
 async function calcularTienda() {
   const peso = $("#tienda-peso").value.trim();
   const calidad = $("#tienda-calidad").value;
@@ -275,21 +302,24 @@ async function calcularTienda() {
   if (!peso || !calidad) {
     $("#res-tienda").textContent = "Ingrese peso y tipo de material.";
     criterio.style.display = "none";
+    pintarBodega(null);
     return;
   }
   const r = await fetch("/api/precio-tienda", {
     method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ peso, calidad }),
+    body: JSON.stringify({ peso, calidad, nombre: yoNombre() }),
   });
   const d = await r.json();
   if (d.error) {
     $("#res-tienda").textContent = "⚠️ " + d.error;
     criterio.style.display = "none";
+    pintarBodega(null);
     return;
   }
   $("#res-tienda").textContent = fmtPesos(d.precio);
   criterio.style.display = "";
   criterio.textContent = `Precio por gramo: ${fmtPesos(d.valor_gr)} — ${calidad}, rango ${d.rango}`;
+  pintarBodega(d.bodega, calidad);
 }
 
 // =====================================================
@@ -315,6 +345,25 @@ function adaptarColor(bg, fg, oscuro) {
   return [bg, fg, "#3A3A3A"];
 }
 
+// Parte el texto de una celda en líneas que caben a lo ancho y, si aun así no
+// caben a lo alto, baja el tamaño de letra (hasta 8px) antes de recortar.
+function ajustarTexto(ctx, c, fuente, ancho, alto) {
+  const peso = c.bold ? "bold " : "";
+  for (let tam = Math.max(9, c.tam || 10); ; tam--) {
+    ctx.font = `${peso}${tam}px ${fuente}`;
+    const lineas = [];
+    let linea = "";
+    for (const palabra of c.texto.split(/\s+/)) {
+      const prueba = linea ? linea + " " + palabra : palabra;
+      if (linea && ctx.measureText(prueba).width > ancho) {
+        lineas.push(linea); linea = palabra;
+      } else { linea = prueba; }
+    }
+    if (linea) lineas.push(linea);
+    if (tam <= 8 || lineas.length * tam * 1.2 <= alto) return [lineas, tam];
+  }
+}
+
 function dibujarTabla(bloques) {
   const oscuro = document.documentElement.dataset.tema === "dark";
   const cv = $("#canvas-tabla"), ctx = cv.getContext("2d");
@@ -331,6 +380,8 @@ function dibujarTabla(bloques) {
   ctx.fillRect(0, 0, anchoMax + 8, altoMax + 8);
   ctx.textBaseline = "middle";
 
+  const fuente = getComputedStyle(document.body).fontFamily;
+
   bloques.forEach(b => {
     const xs = [b.x0]; b.col_px.forEach(w => xs.push(xs[xs.length - 1] + w));
     const ys = [b.y0]; b.row_px.forEach(h => ys.push(ys[ys.length - 1] + h));
@@ -343,11 +394,18 @@ function dibujarTabla(bloques) {
       ctx.strokeStyle = borde; ctx.lineWidth = 1; ctx.strokeRect(x0 + .5, y0 + .5, x1 - x0 - 1, y1 - y0 - 1);
       if (!c.texto) return;
       ctx.fillStyle = fg;
-      ctx.font = `${c.bold ? "bold " : ""}${Math.max(9, (c.tam || 10))}px ${getComputedStyle(document.body).fontFamily}`;
       ctx.textAlign = c.align === "LEFT" ? "left" : c.align === "RIGHT" ? "right" : "center";
       const tx = c.align === "LEFT" ? x0 + 5 : c.align === "RIGHT" ? x1 - 5 : (x0 + x1) / 2;
+      // Los rótulos de los recargos son frases largas dentro de una celda
+      // combinada: en Sheets se ven en varias líneas, así que aquí también hay
+      // que partirlas. Sin esto salía un pedazo del medio recortado y la tabla
+      // de "Recargo +5" parecía no tener título.
+      const [lineas, tam] = ajustarTexto(ctx, c, fuente, x1 - x0 - 10, y1 - y0 - 4);
+      const alto = tam * 1.2;
+      let ty = (y0 + y1) / 2 - alto * (lineas.length - 1) / 2;
       ctx.save(); ctx.beginPath(); ctx.rect(x0, y0, x1 - x0, y1 - y0); ctx.clip();
-      ctx.fillText(c.texto, tx, (y0 + y1) / 2); ctx.restore();
+      lineas.forEach(l => { ctx.fillText(l, tx, ty); ty += alto; });
+      ctx.restore();
     });
   });
 }
@@ -468,9 +526,10 @@ $("#gate-pin").addEventListener("input", () => {
 $("#gate-pin").addEventListener("keydown", e => { if (e.key === "Enter") enviarPin(); });
 
 // =====================================================
-// PANEL DE TURNOS Y COBERTURA
-// Vive fuera de la calculadora. Envía una señal de presencia (para que soporte
-// sepa quién está atendiendo) y muestra a quién hay que cubrir según la hora.
+// PANEL DE TURNOS
+// Vive fuera de la calculadora. Envía una señal de presencia (para que quede
+// registrado quién está atendiendo) y muestra el estado del turno de hoy.
+// Es informativo: desde agosto de 2026 nadie tiene que cubrir a nadie.
 // =====================================================
 const YO_KEY = "turnos_yo";
 // 8s: se siente "en vivo" sin necesitar websockets — lo que lee viene de la
@@ -528,64 +587,7 @@ function pintarCamposAjuste() {
   $("#aj-hora").hidden = pide !== "hora";
 }
 
-// Roles de la última carga (nombre normalizado -> rol), para saber si "Soy:"
-// es soporte. Se marca soporte con un "*" al final del nombre en la hoja.
-let rolesActual = {};
-function normalizarClave(s) {
-  return String(s || "").trim().toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
-}
-function esSoporteYo() {
-  const rol = rolesActual[normalizarClave(yoNombre())] || "";
-  return rol.toLowerCase().includes("soporte");
-}
-
-// Botón para que soporte se adjudique la cobertura (o la libere). Evita que dos
-// personas entren a la misma cuenta y deja el registro de quién cubrió. Solo
-// soporte lo ve — el resto solo ve quién está cubriendo, sin poder tocarlo.
-// Evita que un doble-clic (conexión lenta, clic nervioso) mande la misma
-// acción dos veces: deshabilita el botón mientras la petición está en curso.
-function alClic(b, fn) {
-  b.onclick = async () => {
-    if (b.disabled) return;
-    b.disabled = true;
-    try { await fn(); } finally { b.disabled = false; }
-  };
-}
-
-function botonCubrir(x) {
-  const cont = el("div", "panel-cubrir");
-  if (x.cubierto_por) {
-    cont.append(el("span", "cubre-txt", `cubre ${x.cubierto_por} desde ${x.cubierto_desde || ""}`));
-    if (esSoporteYo()) {
-      const b = el("button", "panel-mini", "liberar");
-      alClic(b, async () => {
-        await fetch("/api/turnos/cubrir/cerrar", {
-          method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ titular: x.nombre }),
-        });
-        cargarTurnos();
-      });
-      cont.append(b);
-    }
-  } else if (esSoporteYo()) {
-    const b = el("button", "panel-mini oro", "Yo lo cubro");
-    alClic(b, async () => {
-      const yo = yoNombre();
-      if (!yo) { alert("Primero elige tu nombre en 'Soy:'"); return; }
-      await fetch("/api/turnos/cubrir", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ titular: x.nombre, soporte: yo }),
-      });
-      cargarTurnos();
-    });
-    cont.append(b);
-  }
-  return cont;
-}
-
 function renderPanel(d) {
-  rolesActual = d.roles || {};
-  pedirPermisoNotificacion();
   refrescarSello();
   revisarAvisos(d);
   $("#panel-semana").textContent =
@@ -599,9 +601,7 @@ function renderPanel(d) {
     $("#panel-aviso").hidden = true;
   }
 
-  const cob = d.requieren_cobertura || [];
   const aus = d.ausencia_informada || [];
-  $("#n-cob").textContent = cob.length ? `(${cob.length})` : "";
   $("#n-aus").textContent = aus.length ? `(${aus.length})` : "";
   $("#n-linea").textContent = (d.en_linea || []).length ? `(${d.en_linea.length})` : "";
 
@@ -621,30 +621,17 @@ function renderPanel(d) {
   $("#fila-mi-estado").hidden = !yoNombre();
   actualizarBloqueo();
 
-  pintarLista($("#lista-cobertura"), cob, x => {
-    const d2 = itemBase(x, "rojo");
-    // El motivo de "turno terminado" y "pendientes de ayer" ya son frases
-    // completas; no repetir la hora de entrada delante (quedaría "empezó
-    // 8am · terminó a las 4pm", o "empezó 11am · entra a las 11am...").
-    const det = (x.turno_terminado || x.pendientes_ayer || x.no_viene_hoy || x.vacaciones)
-      ? x.motivo : `su turno empezó ${x.desde} · ${x.motivo}`;
-    d2.append(el("span", "det", det));
-    d2.append(botonCubrir(x));
-    return d2;
-  });
-
   pintarLista($("#lista-ausencia"), aus, x => {
     // Sede presencial (zona presencial, Santa Fe, El Tesoro, Mostrador…): la
     // persona está trabajando, pero sus chats quedaron sin atender por
     // prioridad de cliente presencial — se resalta distinto de una ausencia.
-    const d2 = itemBase(x, x.sede ? "morado" : x.turno_terminado ? "azul" : "amarillo");
+    const d2 = itemBase(x, x.sede ? "morado" : "amarillo");
     let det = x.estado_etq
       ? `${x.estado_etq}${x.desde_estado ? " desde " + x.desde_estado : ` · turno ${x.desde}-${x.hasta}`}`
       : "";
     if (x.novedad) det = `${x.novedad}${x.nota ? " · " + x.nota : ""}`;
     if (x.sede) det = "🏬 " + det + " · sus chats quedan libres";
     d2.append(el("span", "det", det));
-    d2.append(botonCubrir(x));
     return d2;
   });
 
@@ -726,23 +713,15 @@ function renderPanel(d) {
 
   pintarLista($("#lista-porentrar"), d.por_entrar, x => {
     const d2 = itemBase(x, "");
-    // Turno 2/3 con pendientes de ayer ya revisados trae una nota aparte;
-    // el resto solo dice a qué hora entra.
-    const det = x.estado_etq ? `${x.estado_etq} · entra ${x.desde}` : `entra ${x.desde}`;
-    d2.append(el("span", "det", det));
-    d2.append(botonCubrir(x));   // soporte puede adelantarse, sin esperar la alarma
+    d2.append(el("span", "det", `entra ${x.desde}`));
     return d2;
   });
 
   pintarLista($("#lista-nospera"), d.no_se_espera, x => {
     const d2 = itemBase(x, "");
-    // Todos los casos "tranquilos por ahora" (turno terminado, no viene hoy,
-    // vacaciones) muestran cuándo se revisó y el botón para revisar de nuevo
-    // antes de que venza — el resto (Aún no entra por horario normal) no.
-    if (x.turno_terminado || x.no_viene_hoy || x.vacaciones) {
-      d2.append(el("span", "det", x.estado_etq || "Pendientes ya revisados"));
-      d2.append(botonCubrir(x));
-    }
+    // Un turno ya terminado se distingue de quien no vino: en el primer caso
+    // la persona sí trabajó hoy.
+    if (x.turno_terminado) d2.append(el("span", "det", `su turno terminó ${x.hasta}`));
     return d2;
   });
 
@@ -797,35 +776,16 @@ async function quitarNovedad(nombre, tipo) {
 
 // =====================================================
 // AVISO SONORO
-// El problema original era que soporte no se daba cuenta. Un contador rojo no
-// sirve si nadie mira la pantalla, así que suena cuando aparece algo nuevo que
-// exige acción: una novedad importante o alguien que se queda sin cubrir.
+// Un aviso en pantalla no sirve si nadie la está mirando, así que el panel
+// suena cuando entra una novedad nueva (doble pitido si es de las que dejan
+// chats sin atender). Ya no hay pitido por coberturas: no existen.
 // =====================================================
 const MUDO_KEY = "turnos_mudo";
 let novVistas = null;          // ids de novedades ya avisadas
-let cobVistas = null;          // nombres ya avisados como sin cubrir
 let tituloOriginal = document.title;
 let parpadeo = null;
-let repiqueCobertura = null;   // pitido cada 1 min mientras alguien siga sin cubrir (solo soporte)
 
 function estaMudo() { return localStorage.getItem(MUDO_KEY) === "1"; }
-
-// Notificación nativa del sistema (funciona con el navegador minimizado, no
-// solo en segundo plano). Solo para soporte, y solo tras dar el permiso.
-function pedirPermisoNotificacion() {
-  if (!esSoporteYo() || !("Notification" in window)) return;
-  if (Notification.permission === "default") Notification.requestPermission();
-}
-
-function notificarCobertura(nombre) {
-  if (!("Notification" in window) || Notification.permission !== "granted") return;
-  try {
-    new Notification("⚠️ Requieren cobertura", {
-      body: `${nombre} quedó sin cubrir — entra al panel de Turnos.`,
-      tag: "cobertura-" + nombre,   // evita apilar varias del mismo nombre
-    });
-  } catch (e) { /* algunos navegadores bloquean Notification sin foco */ }
-}
 
 function sonar(doble) {
   if (estaMudo()) return;
@@ -869,38 +829,20 @@ function avisarEnTitulo(texto) {
 
 function revisarAvisos(d) {
   const novs = d.novedades || [];
-  const cob = d.requieren_cobertura || [];
   const idsNov = new Set(novs.map(n => n.id));
-  const nomCob = new Set(cob.map(x => x.nombre));
 
   // Primera carga: solo se toma nota, sin sonar (evita el pitido al abrir).
-  if (novVistas === null) { novVistas = idsNov; cobVistas = nomCob; }
-  else {
-    const nuevasNov = novs.filter(n => !novVistas.has(n.id));
-    const nuevasCob = cob.filter(x => !cobVistas.has(x.nombre));
-    const importante = nuevasNov.some(n => n.importante);
+  if (novVistas === null) { novVistas = idsNov; return; }
 
-    if (importante || nuevasCob.length) {
-      sonar(true);
-      const quien = importante ? nuevasNov.find(n => n.importante).nombre
-                               : nuevasCob[0].nombre;
-      avisarEnTitulo(`⚠️ ${quien} — revisar turnos`);
-      nuevasCob.forEach(x => notificarCobertura(x.nombre));
-    } else if (nuevasNov.length) {
-      sonar(false);
-    }
-    novVistas = idsNov;
-    cobVistas = nomCob;
+  const nuevas = novs.filter(n => !novVistas.has(n.id));
+  const importante = nuevas.find(n => n.importante);
+  if (importante) {
+    sonar(true);
+    avisarEnTitulo(`⚠️ ${importante.nombre} — revisar turnos`);
+  } else if (nuevas.length) {
+    sonar(false);
   }
-
-  // Para soporte: mientras alguien siga en "Requieren cobertura", un pitido
-  // extra cada minuto — no basta con avisar una sola vez cuando aparece.
-  if (esSoporteYo() && cob.length && !estaMudo()) {
-    if (!repiqueCobertura) repiqueCobertura = setInterval(() => sonar(true), 60000);
-  } else if (repiqueCobertura) {
-    clearInterval(repiqueCobertura);
-    repiqueCobertura = null;
-  }
+  novVistas = idsNov;
 }
 
 // --- Sello de fecha y hora del servidor (imagen, no texto editable) ---
@@ -974,18 +916,6 @@ async function guardarPersona() {
 // --- Vista de gestión: solo aparece con el PIN de la jefa de ventas ---
 let esJefa = false;
 
-// Umbrales de veredicto — ajustables si con el uso real resultan muy
-// estrictos o muy permisivos. Se acumulan sobre el rango mostrado (por
-// defecto, la semana en curso), no por día.
-const VEREDICTO_ASESOR_MIN = [15, 60];       // minutos sin cobertura confirmada
-const VEREDICTO_SOPORTE_MIN = [10, 30];      // minutos de respuesta promedio
-
-function veredicto(minutos, [verde, amarillo]) {
-  if (minutos <= verde) return "verde";
-  if (minutos <= amarillo) return "amarillo";
-  return "rojo";
-}
-
 async function cargarGestion() {
   if (!esJefa) return;
   try {
@@ -995,38 +925,18 @@ async function cargarGestion() {
     const t = d.totales || {};
     $("#gestion-totales").textContent =
       `${d.desde} a ${d.hasta} · ${t.personas || 0} personas · ` +
-      `${t.novedades || 0} novedades · ${t.minutos_sin_cobertura || 0} min sin cobertura` +
+      `${t.novedades || 0} novedades` +
       (t.minutos_presencial ? ` · 🏬 ${t.minutos_presencial} min en presencial` : "");
 
-    const personas = d.personas || [];
-    const esSoporte = p => (p.rol || "").toLowerCase().includes("soporte");
-    const asesores = personas.filter(p => !esSoporte(p))
-      .sort((a, b) => b.minutos_sin_cobertura - a.minutos_sin_cobertura);
-    const soporte = personas.filter(esSoporte)
-      .sort((a, b) => b.min_respuesta_prom - a.min_respuesta_prom);
+    // Menos días con señal = más arriba: es lo que la jefa revisa primero.
+    const personas = (d.personas || [])
+      .slice().sort((a, b) => a.dias_con_senal - b.dias_con_senal);
 
-    pintarLista($("#gestion-asesores"), asesores, p => {
-      const v = veredicto(p.minutos_sin_cobertura, VEREDICTO_ASESOR_MIN);
-      const d2 = itemBase(p, v);
+    pintarLista($("#gestion-asesores"), personas, p => {
+      const d2 = itemBase(p, p.dias_con_senal ? "" : "gris");
       const partes = [`entra ~${p.entrada_tipica}`, `${p.dias_con_senal} días con señal`];
-      partes.push(p.minutos_sin_cobertura
-        ? `${p.minutos_sin_cobertura} min sin cobertura (${p.episodios_sin_cobertura}×)`
-        : "sin episodios sin cobertura");
       if (p.total_novedades) partes.push(`${p.total_novedades} novedades`);
       if (p.minutos_presencial) partes.push(`🏬 ${p.minutos_presencial} min presencial`);
-      d2.append(el("span", "det", partes.join(" · ")));
-      return d2;
-    });
-
-    pintarLista($("#gestion-soporte"), soporte, p => {
-      // Sin ninguna respuesta registrada no significa que incumplió — puede
-      // ser que sencillamente no hubo nada que cubrir en el rango.
-      const v = p.veces_respondio ? veredicto(p.min_respuesta_prom, VEREDICTO_SOPORTE_MIN) : "gris";
-      const d2 = itemBase(p, v);
-      const partes = p.veces_respondio
-        ? [`cubrió ${p.veces_respondio}×`, `~${p.min_respuesta_prom} min de respuesta`]
-        : ["sin coberturas registradas en el rango"];
-      if (p.minutos_cubierto) partes.push(`${p.minutos_cubierto} min cubriendo en total`);
       d2.append(el("span", "det", partes.join(" · ")));
       return d2;
     });
@@ -1050,10 +960,11 @@ function iniciarPanelTurnos() {
     if (!v) estoyConfirmado = false;      // cambió de identidad: hay que reconfirmar "Estoy:"
     actualizarBloqueo();
     enviarPresencia().then(cargarTurnos);
+    calcularTienda();                     // otra identidad puede no ver los datos de bodega
   };
 
-  // "Estoy:" — el asesor dice en qué está, así soporte no lo confunde con una
-  // ausencia sin explicación. También es lo que desbloquea la calculadora.
+  // "Estoy:" — cada quien dice en qué está, para que el panel no lo confunda
+  // con una ausencia sin explicar. También es lo que desbloquea la calculadora.
   $("#mi-estado").onchange = async e => {
     const nombre = yoNombre();
     if (!nombre || !e.target.value) return;
@@ -1064,6 +975,10 @@ function iniciarPanelTurnos() {
       body: JSON.stringify({ nombre, estado: e.target.value }),
     });
     cargarTurnos();
+    // El estado es una de las dos condiciones para ver los datos de bodega, y
+    // el servidor lo consulta al calcular: hay que volver a pedir el cálculo
+    // para que el bloque aparezca (o desaparezca) sin retipear el peso.
+    calcularTienda();
   };
 
   $("#btn-gestion-refrescar").onclick = cargarGestion;

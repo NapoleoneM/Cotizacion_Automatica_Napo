@@ -27,7 +27,11 @@ from core.mayorista_logic import obtener_precios_sheets, calcular_cotizacion_may
 from core.tabla_precios import obtener_tabla_precios
 from core.tienda_logic import obtener_tarifas_gramo, calcular_precio_tienda
 from core.turnos import (
-    obtener_horario, calcular_cobertura, personas_del_horario, horario_desde_equipo,
+    obtener_horario, calcular_panel, personas_del_horario, horario_desde_equipo,
+    es_auxiliar_bodega,
+    # El rótulo de la semana también hace falta cuando NO hay horario que
+    # mostrar (misma convención de import "privado" que usa tabla_precios).
+    _semana_actual,
 )
 from core import almacen
 
@@ -285,6 +289,9 @@ class MayoristaReq(BaseModel):
 class PrecioTiendaReq(BaseModel):
     peso: str = Field("", max_length=30)
     calidad: str = Field("", max_length=60)
+    # Quién está calculando: solo los auxiliares de bodega, y solo mientras
+    # estén "En zona presencial", reciben las cifras de EFFI (ver más abajo).
+    nombre: str = Field("", max_length=40)
 
 
 # =======================================================
@@ -384,13 +391,40 @@ def actualizar_precios():
     }
 
 
+def _puede_ver_bodega(nombre):
+    """Las cifras de costo son solo para los auxiliares de bodega, y solo bajo
+    DOS condiciones a la vez: que el nombre elegido en "Soy:" esté en la
+    columna 'Auxiliares de bodega' de la hoja, Y que su estado actual sea "En
+    zona presencial". Con "En chat" no se activan.
+
+    Se valida acá y no en el navegador, así el costo no viaja al cliente que no
+    debe verlo y el bloque no se destapa editando el HTML.
+
+    OJO con el alcance real: "Soy:" es una lista que cualquiera elige, no un
+    login. Esto evita que un vendedor se tropiece con el costo trabajando
+    normal (que es el problema real: lo confunde con el precio de venta), pero
+    NO impide que alguien elija a propósito el nombre de un auxiliar y marque
+    "En zona presencial". Para eso haría falta autenticación por persona.
+    """
+    if not nombre:
+        return False
+    horario, _err = _horario_actual()
+    if not horario or not es_auxiliar_bodega(horario, nombre):
+        return False
+    estado = (almacen.estados_actuales() or {}).get(almacen.clave(nombre)) or {}
+    return estado.get("estado") == almacen.ESTADO_PRESENCIAL
+
+
 @app.post("/api/precio-tienda")
 def api_precio_tienda(req: PrecioTiendaReq):
     if not _precios["tarifas_gramo"]:
         return {"error": "Tarifas no cargadas. Presione 'Actualizar precios'."}
     if not req.calidad:
         return {"error": "Seleccione una calidad."}
-    return calcular_precio_tienda(req.peso, req.calidad, _precios["tarifas_gramo"])
+    return calcular_precio_tienda(
+        req.peso, req.calidad, _precios["tarifas_gramo"],
+        con_bodega=_puede_ver_bodega(_limpiar_nombre(req.nombre)),
+    )
 
 
 @app.get("/api/tabla")
@@ -446,7 +480,7 @@ def _componer_bloques(tabla):
 
 
 # =======================================================
-# TURNOS Y COBERTURA (panel del chat center)
+# TURNOS (panel informativo del chat center)
 # =======================================================
 # El horario cambia una vez por semana: con 2 minutos de caché el panel se
 # siente en vivo y no se castiga la cuota de la API de Sheets.
@@ -504,15 +538,11 @@ class NovedadReq(BaseModel):
     hasta: str = Field("", max_length=5)
 
 
-class CoberturaReq(BaseModel):
-    titular: str = Field("", max_length=40)
-    soporte: str = Field("", max_length=40)
-
-
 @app.get("/api/turnos/estado")
 def api_turnos_estado():
-    """Lo que ve el panel: a quién debe cubrir soporte ahora, quién tiene una
-    ausencia ya explicada, quién está en línea y las novedades del día."""
+    """Lo que ve el panel: quién está en línea, quién tiene una ausencia ya
+    explicada, a quién no se espera hoy y las novedades del día. Es
+    informativo: nadie tiene que cubrir a nadie."""
     horario, err = _horario_actual()
     novedades = almacen.novedades_del_dia()
     base = {
@@ -526,43 +556,38 @@ def api_turnos_estado():
     }
     if horario is None:
         # Sin horario todavía se pueden ver y registrar novedades.
+        # 'semana' tiene que ir: el pie del panel la concatena sin comprobar,
+        # y sin ella se leía un "undefined" en pantalla.
         return {**base, "configurado": False, "aviso": err,
                 "novedades": novedades, "personas": [], "ajustes": [],
-                "requieren_cobertura": [], "ausencia_informada": [], "en_linea": [],
+                "auxiliares": [], "ausencia_informada": [], "en_linea": [],
                 "por_entrar": [], "no_se_espera": [],
+                "semana": _semana_actual(), "dia": "",
                 "hora": datetime.now().strftime("%I:%M %p")}
-    # El rol de alguien registrado en el panel Equipo (ej. "Venta presencial")
-    # tiene que pesar en la alarma en vivo, no solo en el resumen histórico de
-    # gestión — si no, alguien marcado como no cubrible ahí puede seguir
-    # disparando "Requieren cobertura" porque el horario (hoja/asterisco) no
-    # sabe nada de ese rol. El "*"/hoja manda si dice algo; si no, se usa el
-    # rol de Equipo.
+    # Los roles ya no cambian a quién se muestra (el panel es informativo), pero
+    # el panel los sigue enseñando: los del cuadro/hoja Roles pesan sobre los
+    # que la jefa registró en Equipo.
     equipo = almacen.equipo()
     roles = {p["clave"]: p["rol"] for p in equipo}
     roles.update(horario.get("roles") or {})
     horario_con_roles = {**horario, "roles": roles}
 
-    datos = calcular_cobertura(
+    datos = calcular_panel(
         horario_con_roles, datetime.now(),
         presencia=almacen.presencia_del_dia(),
         estados=almacen.estados_actuales(),
         novedades=novedades,
-        coberturas=almacen.coberturas_activas(),
         ajustes=almacen.ajustes_del_dia(),
     )
-    # Trazabilidad: registra quién está AHORA en "Requieren cobertura" para
-    # poder medir después cuánto tiempo pasó sin que nadie confirmara y qué
-    # tan rápido reaccionó soporte (ver Gestión → resumen).
-    almacen.registrar_alertas_activas([x["nombre"] for x in datos["requieren_cobertura"]])
-
     # El equipo registrado en la app (panel de Gestión) se suma al selector
     # "Soy:" aunque la hoja de Sheets sea la fuente activa del horario — así
     # se puede dar de alta a alguien (ej. una cuenta de pruebas) sin tocar la
     # hoja real de la jefa. Al no estar en las asignaciones del horario, no
-    # entra en ninguna lista de cobertura: no interfiere con los asesores.
+    # aparece en ninguna lista del panel.
     personas = sorted(set(personas_del_horario(horario)) | {p["nombre"] for p in equipo})
     datos.update(base, configurado=True, personas=personas,
-                 fuente=horario.get("fuente", ""), roles=roles)
+                 fuente=horario.get("fuente", ""), roles=roles,
+                 auxiliares=horario.get("auxiliares") or [])
     return datos
 
 
@@ -578,8 +603,8 @@ def api_turnos_presencia(req: PresenciaReq):
 
 @app.post("/api/turnos/estado-asesor")
 def api_turnos_estado_asesor(req: EstadoReq):
-    """El asesor marca en qué está (disponible, almuerzo, capacitación…). Así
-    soporte distingue una ausencia explicada de un silencio inexplicado."""
+    """El vendedor marca en qué está (en chat, almuerzo, zona presencial). Así
+    el panel distingue una ausencia explicada de un silencio sin explicar."""
     nombre = _limpiar_nombre(req.nombre)
     if not nombre:
         return {"error": "Falta el nombre."}
@@ -607,7 +632,6 @@ def api_turnos_novedad_quitar(req: NovedadReq):
     if not nombre:
         return {"error": "Falta el nombre."}
     quitadas = almacen.quitar_novedad(nombre, req.tipo or None)
-    almacen.cerrar_cobertura(nombre)
     return {"ok": True, "quitadas": quitadas}
 
 
@@ -641,26 +665,6 @@ def api_turnos_ajuste_quitar(req: AjusteReq):
     if not nombre:
         return {"error": "Falta el nombre."}
     return {"ok": True, "quitados": almacen.quitar_ajuste(nombre, req.tipo or None)}
-
-
-@app.post("/api/turnos/cubrir")
-def api_turnos_cubrir(req: CoberturaReq):
-    """Soporte declara que está cubriendo a alguien: evita que dos personas
-    entren a la misma cuenta y deja el registro de quién cubrió qué."""
-    titular = _limpiar_nombre(req.titular)
-    soporte = _limpiar_nombre(req.soporte)
-    if not titular or not soporte:
-        return {"error": "Falta el titular o quién cubre."}
-    almacen.abrir_cobertura(titular, soporte)
-    return {"ok": True}
-
-
-@app.post("/api/turnos/cubrir/cerrar")
-def api_turnos_cubrir_cerrar(req: CoberturaReq):
-    titular = _limpiar_nombre(req.titular)
-    if not titular:
-        return {"error": "Falta el titular."}
-    return {"ok": True, "cerradas": almacen.cerrar_cobertura(titular)}
 
 
 # =======================================================
@@ -731,9 +735,8 @@ def api_equipo_quitar(req: PersonaReq, request: Request):
 @app.get("/api/gestion/resumen")
 def api_gestion_resumen(request: Request, desde: str = "", hasta: str = ""):
     """Resumen por persona de un rango (por defecto, la semana en curso):
-    días con señal, hora de entrada típica, novedades, minutos cubierto,
-    minutos sin cobertura confirmada (cumplimiento) y tiempo de respuesta
-    de soporte."""
+    días con señal, hora de entrada típica, novedades y minutos desviados a la
+    zona presencial."""
     negado = _solo_jefa(request)
     if negado:
         return negado
@@ -744,14 +747,14 @@ def api_gestion_resumen(request: Request, desde: str = "", hasta: str = ""):
     roles = (horario or {}).get("roles") or {}
     equipo_roles = {p["clave"]: p["rol"] for p in almacen.equipo()}
     for p in res["personas"]:
-        # El "*"/hoja manda; si no está ahí, se usa el rol del panel de Equipo.
+        # La hoja manda; si no está ahí, se usa el rol del panel de Equipo.
         p["rol"] = roles.get(almacen.clave(p["nombre"])) or equipo_roles.get(almacen.clave(p["nombre"]), "")
     return res
 
 
 @app.get("/api/gestion/dia")
 def api_gestion_dia(request: Request, fecha: str = ""):
-    """Foto de un día: novedades y coberturas (para revisar ayer, por ejemplo)."""
+    """Foto de un día: novedades, presencia y estados (para revisar ayer)."""
     negado = _solo_jefa(request)
     if negado:
         return negado
@@ -759,7 +762,6 @@ def api_gestion_dia(request: Request, fecha: str = ""):
     return {
         "fecha": f,
         "novedades": almacen.novedades_del_dia(f, solo_activas=False),
-        "coberturas": list(almacen.coberturas_activas(f).values()),
         "presencia": almacen.presencia_del_dia(f),
         "estados": almacen.estados_actuales(f),
     }
@@ -826,7 +828,8 @@ TOKEN_TORRE = os.environ.get("TORRE_TOKEN", "").strip()
 
 @app.get("/api/torre/historial")
 def api_torre_historial(request: Request, desde: str = "", hasta: str = ""):
-    """Volcado crudo de presencia, estados, novedades y coberturas por rango."""
+    """Volcado crudo de presencia, estados y novedades por rango (más las
+    coberturas históricas, que la Torre sigue esperando)."""
     token = (request.headers.get("x-token") or "").strip()
     if not TOKEN_TORRE:
         return JSONResponse({"error": "Puente no configurado."}, status_code=503)

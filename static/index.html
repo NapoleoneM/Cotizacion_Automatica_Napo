@@ -151,6 +151,17 @@
       <pre class="resultado" id="res-tienda">Ingrese peso y tipo de material.</pre>
       <div id="criterio-tienda" class="aviso" style="display:none"></div>
     </div>
+
+    <!-- Cifras para cargar el producto a EFFI. Solo se llenan si el servidor
+         las manda: auxiliar de bodega en "Soy:" Y "Estoy: En zona presencial".
+         Así un vendedor trabajando normal no se tropieza con el costo (lo
+         confunde con el precio de venta). No es un control de acceso: "Soy:"
+         es una lista, no un login. -->
+    <div class="tarjeta" id="tarjeta-bodega" hidden>
+      <div class="tarjeta-titulo">📦 Datos de bodega (carga a EFFI)</div>
+      <div class="bodega-grid" id="bodega-grid"></div>
+      <div id="criterio-bodega" class="aviso"></div>
+    </div>
   </section>
 
   <!-- ================= TABLA DE PRECIOS ================= -->
@@ -165,14 +176,14 @@
   </section>
   </div><!-- /app-principal -->
 
-  <!-- ============ TURNOS Y COBERTURA ============
+  <!-- ============ TURNOS ============
        Fijo a la derecha en pantallas anchas (igual que antes); en angostas
        se apila debajo de la calculadora en vez de taparla. Ya no es un
        botón desplegable: su contenido queda siempre visible. -->
   <aside class="panel-turnos" id="panel-turnos">
     <div class="panel-cuerpo">
       <div class="panel-cab">
-        <strong>Turnos y cobertura</strong>
+        <strong>Turnos del chat center</strong>
         <span class="panel-cab-btns">
           <button class="panel-mini" id="btn-mudo" title="Silenciar el aviso sonoro">🔔</button>
           <button class="panel-mini" id="btn-salir" title="Salir / cambiar de PIN">salir</button>
@@ -191,11 +202,6 @@
         <select id="mi-estado"></select>
       </div>
       <div class="aviso" id="panel-aviso" hidden></div>
-
-      <div class="panel-sec">
-        <div class="panel-sec-tit rojo">Requieren cobertura <span id="n-cob"></span></div>
-        <div class="panel-lista" id="lista-cobertura"></div>
-      </div>
 
       <div class="panel-sec">
         <div class="panel-sec-tit amarillo">Ausencia informada <span id="n-aus"></span></div>
@@ -233,7 +239,7 @@
           <select id="aj-turno" hidden>
             <option value="1">Turno 1</option>
             <option value="2">Turno 2</option>
-            <option value="3">Turno 3</option>
+            <option value="3">Turno 3 (auditoría)</option>
           </select>
           <input type="text" id="aj-hora" hidden maxlength="5" placeholder="Hora de entrada (11:00)">
           <input type="text" id="aj-nota" maxlength="200" placeholder="Motivo (opcional)">
@@ -267,7 +273,7 @@
           <select id="per-turno">
             <option value="1">Turno 1</option>
             <option value="2">Turno 2</option>
-            <option value="3">Turno 3</option>
+            <option value="3">Turno 3 (auditoría)</option>
           </select>
           <button class="btn-verde panel-btn-full" id="per-guardar">Agregar / actualizar</button>
         </div>
@@ -276,10 +282,8 @@
       <div class="panel-sec" id="sec-gestion" hidden>
         <div class="panel-sec-tit oro">Gestión · semana en curso</div>
         <div id="gestion-totales" class="panel-gestion-tot"></div>
-        <div class="panel-sec-tit" style="margin-top:8px">Asesores — cumplimiento de horario</div>
+        <div class="panel-sec-tit" style="margin-top:8px">Vendedores — registro de la semana</div>
         <div class="panel-lista" id="gestion-asesores"></div>
-        <div class="panel-sec-tit" style="margin-top:8px">Soporte — cobertura y tiempo de respuesta</div>
-        <div class="panel-lista" id="gestion-soporte"></div>
         <button class="panel-btn-gris panel-btn-full" id="btn-gestion-refrescar">Actualizar resumen</button>
       </div>
 

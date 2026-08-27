@@ -1,3 +1,7 @@
+# ARCHIVO — esta prueba vivía en tools/test_almacen_alertas.py y se retiró en
+# agosto de 2026 junto con la cobertura de soporte. Su reemplazo actual es
+# tools/test_almacen.py (presencia, estados, novedades y resumen).
+#
 # Prueba de la trazabilidad de "Requieren cobertura" (episodios de alarma y
 # tiempo de respuesta de soporte) en un SQLite temporal, sin tocar el real.
 # Uso: python tools/test_almacen_alertas.py

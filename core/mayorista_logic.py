@@ -73,7 +73,8 @@ def obtener_precios_sheets(ruta_credenciales):
                 "Recargo +1": get_val(34, 16),
                 "Recargo +2": get_val(35, 16),
                 "Recargo +3": get_val(36, 16),
-                "Recargo +4": get_val(37, 16)
+                "Recargo +4": get_val(37, 16),
+                "Recargo +5": get_val(38, 16)
             },
             "Bolas": {
                 "Lisa contado": get_val(40, 16),
