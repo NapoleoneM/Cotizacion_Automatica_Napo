@@ -470,11 +470,28 @@ function mostrarGate() {
 function ocultarGate() { clearInterval(gateTimer); gate.hidden = true; }
 
 async function comprobarSesion() {
+  let d;
   try {
-    const d = await _fetch("/api/sesion").then(r => r.json());
-    if (d.autorizado) { ocultarGate(); iniciarApp(); aplicarRol(d.rol || ""); }
-    else mostrarGate();
-  } catch { mostrarGate(); }
+    d = await _fetch("/api/sesion").then(r => r.json());
+  } catch (e) {
+    mostrarGate();      // sin red o sin sesión: pedir el PIN
+    return;
+  }
+  if (!d.autorizado) { mostrarGate(); return; }
+  ocultarGate();
+  // Fuera del try de arriba a propósito: si el arranque de la app falla, hay
+  // que VERLO. Antes un solo catch envolvía las dos cosas, así que un error
+  // acá se leía como "no hay sesión" y el panel quedaba vacío sin ninguna
+  // pista en la consola (fue exactamente lo que pasó el 27/08/2026 al quedar
+  // una llamada a alClic sin su función).
+  try {
+    iniciarApp();
+    aplicarRol(d.rol || "");
+  } catch (e) {
+    console.error("Falló el arranque de la aplicación:", e);
+    const av = $("#panel-aviso");
+    if (av) { av.hidden = false; av.textContent = "⚠️ Error al iniciar: " + e.message; }
+  }
 }
 
 async function enviarPin() {
@@ -558,6 +575,17 @@ function el(tag, cls, txt) {
   if (cls) n.className = cls;
   if (txt !== undefined) n.textContent = txt;
   return n;
+}
+
+// Evita que un doble clic (conexión lenta, clic nervioso) mande la misma
+// acción dos veces: deshabilita el botón mientras la petición está en curso.
+// La usan los botones "Guardar" de los formularios de ajuste y de novedad.
+function alClic(b, fn) {
+  b.onclick = async () => {
+    if (b.disabled) return;
+    b.disabled = true;
+    try { await fn(); } finally { b.disabled = false; }
+  };
 }
 
 function pintarLista(cont, items, hacerItem) {
