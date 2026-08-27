@@ -844,6 +844,28 @@ def api_torre_historial(request: Request, desde: str = "", hasta: str = ""):
 # =======================================================
 # FRONTEND ESTÁTICO
 # =======================================================
+# El index, el JS y el CSS tienen que revalidarse SIEMPRE. Sin esto el
+# navegador reusa el app.js viejo junto al index.html nuevo después de un
+# despliegue y, como ese JS toca elementos que ya no existen en el HTML,
+# renderPanel muere a media función: el sello y la semana se pintan, pero el
+# selector "Soy:" queda vacío y las listas sin dibujar. Pasó el 27/08/2026 al
+# quitar el contador "#n-cob".
+#
+# "no-cache" no significa "no guardar": el navegador sigue guardando el
+# archivo, pero pregunta antes de usarlo. StaticFiles ya manda ETag, así que
+# cuando no cambió la respuesta es un 304 sin cuerpo. Las imágenes (logo,
+# favicon) no están acá: cambian casi nunca y sí conviene que se cacheen.
+_SIN_CACHE = {"/", "/index.html", "/app.js", "/styles.css"}
+
+
+@app.middleware("http")
+async def _revalidar_frontend(request: Request, call_next):
+    respuesta = await call_next(request)
+    if request.url.path in _SIN_CACHE:
+        respuesta.headers["Cache-Control"] = "no-cache, must-revalidate"
+    return respuesta
+
+
 @app.get("/")
 def index():
     return FileResponse(os.path.join(STATIC, "index.html"))
