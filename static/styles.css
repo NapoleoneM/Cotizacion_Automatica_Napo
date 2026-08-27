@@ -257,3 +257,6 @@ details.panel-sec > summary { cursor: pointer; list-style: revert; }
 }
 .bodega-etq { color: var(--texto-suave); font-size: 12px; }
 .bodega-val { font-weight: bold; font-variant-numeric: tabular-nums; }
+/* Tarifa que no aplica en este modelo de precio: se muestra para que se sepa
+   que esa columna de EFFI va vacía, pero apagada para no confundirla. */
+.bodega-fila.no-aplica .bodega-val { color: var(--texto-suave); font-weight: normal; font-style: italic; }

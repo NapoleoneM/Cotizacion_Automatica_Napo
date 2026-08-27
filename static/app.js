@@ -268,31 +268,55 @@ function poblarCalidadesTienda(calidades) {
 
 function fmtPesos(n) { return `$${n.toLocaleString("es-CO").replace(/,/g, ".")}`; }
 
-// Cifras de bodega, en el mismo orden en que se cargan en EFFI.
+// Cifras de bodega, EN EL ORDEN DE LAS COLUMNAS DE EFFI, que es el orden en
+// que se cargan. Las tarifas 2 y 4 van con valor nulo a propósito: en el
+// modelo "Pesado" sus fórmulas exigen categoría "Pulsera Tejida" y costo
+// manual, así que acá nunca aplican — pero hay que mostrarlas para que se sepa
+// que esas columnas van vacías.
 const CAMPOS_BODEGA = [
-  ["Costo", "costo", "EFFI · Costo (S)"],
-  ["Precio mínimo venta", "precio_minimo", "EFFI · Precio mínimo (T) — costo +5%"],
-  ["Valor CO.", "valor_co", "Inputs · Valor CO. (M) — el mismo precio de tienda"],
-  ["Tarifa 1", "tarifa_1", "EFFI · Tarifa 1 (AB) — Valor CO sin IVA"],
+  ["Costo", "costo", "EFFI columna S = Inputs L · costo por gramo × peso, a la centena"],
+  ["Precio mínimo venta", "precio_minimo", "EFFI columna T · costo + 5%"],
+  ["Tarifa 1", "tarifa_1", "EFFI columna AB · Valor CO ÷ 1,19 (sin IVA). Es la única sin redondear"],
+  ["Tarifa 2", "tarifa_2", "EFFI columna AC · solo aplica en Pulsera Tejida con costo manual"],
+  ["Tarifa 3 (Valor CO.)", "tarifa_3", "EFFI columna AD = Inputs M · es el precio sugerido para tienda"],
+  ["Tarifa 4", "tarifa_4", "EFFI columna AE · solo aplica en Pulsera Tejida con costo manual"],
+  ["Tarifa 5 (USD)", "tarifa_5", "EFFI columna AF · precio por gramo en dólares × peso, al entero"],
 ];
+
+// Formato de CARGA, no de lectura: tal como se ve en la hoja, sin separador de
+// miles y con coma decimal. Es a propósito — estas cifras se copian a EFFI, y
+// un "$1.386.554,62" no se puede pegar como número.
+function fmtCarga(n) {
+  if (n === null || n === undefined) return "no aplica";
+  return String(n).replace(".", ",");
+}
 
 // El bloque solo aparece si el servidor mandó las cifras. Quien decide es el
 // servidor (auxiliar de bodega + "En zona presencial"), no este archivo.
-function pintarBodega(b, calidad) {
-  const tarjeta = $("#tarjeta-bodega");
-  tarjeta.hidden = !b;
+function pintarBodega(d, calidad) {
+  const b = d && d.bodega;
+  $("#tarjeta-bodega").hidden = !b;
+  // El precio sugerido se esconde mientras se ven los datos de bodega: es el
+  // mismo número que "Tarifa 3 (Valor CO.)" y repetirlo solo estorba.
+  $("#tarjeta-precio-tienda").hidden = !!b;
   if (!b) return;
+
   const grid = $("#bodega-grid");
   grid.innerHTML = "";
   CAMPOS_BODEGA.forEach(([etq, clave, ayuda]) => {
-    const fila = el("div", "bodega-fila");
+    const aplica = b[clave] !== null && b[clave] !== undefined;
+    const fila = el("div", "bodega-fila" + (aplica ? "" : " no-aplica"));
     fila.title = ayuda;
     fila.append(el("span", "bodega-etq", etq));
-    fila.append(el("span", "bodega-val", fmtPesos(b[clave])));
+    fila.append(el("span", "bodega-val", fmtCarga(b[clave])));
     grid.append(fila);
   });
+
+  const porGramo = [`costo ${fmtPesos(b.costo_gr)}`, `tienda ${fmtPesos(d.valor_gr)}`];
+  if (b.usd_gr) porGramo.push(`USD ${b.usd_gr}`);
   $("#criterio-bodega").textContent =
-    `Costo por gramo: ${fmtPesos(b.costo_gr)} — ${calidad}. Modelo de precio "Pesado".`;
+    `${calidad}, rango ${d.rango} · por gramo: ${porGramo.join(" · ")}. ` +
+    `Modelo de precio "Pesado".`;
 }
 
 async function calcularTienda() {
@@ -319,7 +343,7 @@ async function calcularTienda() {
   $("#res-tienda").textContent = fmtPesos(d.precio);
   criterio.style.display = "";
   criterio.textContent = `Precio por gramo: ${fmtPesos(d.valor_gr)} — ${calidad}, rango ${d.rango}`;
-  pintarBodega(d.bodega, calidad);
+  pintarBodega(d, calidad);
 }
 
 // =====================================================

@@ -244,12 +244,31 @@ Los auxiliares cargan los productos a EFFI, y para eso necesitan más que el
 precio sugerido. Con el peso y el tipo de material, la pestaña les muestra
 además:
 
-| Valor | Cómo se calcula | Equivale a |
+| Valor | Cómo se calcula | Columna de EFFI |
 |---|---|---|
-| **Costo** | `REDONDEAR.MAS(costo_gr × peso; -2)` (a la centena) | `Inputs!L` = `EFFILoad!S` |
-| **Precio mínimo venta** | `REDONDEAR(Costo × 1,05; 0)` | `EFFILoad!T` |
-| **Valor CO.** | el mismo precio sugerido de tienda, sin recalcular | `Inputs!M` |
-| **Tarifa 1** | `Valor CO ÷ 1,19` (sin IVA) | `EFFILoad!AB` |
+| **Costo** | `REDONDEAR.MAS(costo_gr × peso; -2)` (a la centena) | `S` (= `Inputs!L`) |
+| **Precio mínimo venta** | `REDONDEAR(Costo × 1,05; 0)` | `T` |
+| **Tarifa 1** | `Valor CO ÷ 1,19` (sin IVA) — **la única sin redondear**, va con dos decimales | `AB` |
+| **Tarifa 2** | `x_mayor_cop × peso`, al millar | `AC` |
+| **Tarifa 3 (Valor CO.)** | el mismo precio sugerido de tienda, sin recalcular | `AD` (= `Inputs!M`) |
+| **Tarifa 4** | `joyerias_cop × peso`, al millar | `AE` |
+| **Tarifa 5 (USD)** | `REDONDEAR.MAS(shopi_gr_usd × peso; 0)`, en dólares | `AF` |
+
+Las **tarifas 2 y 4 nunca aplican acá**: sus fórmulas exigen que la categoría
+sea "Pulsera Tejida" **y** que haya costo manual, y esta pestaña no pide
+ninguna de las dos cosas. Se muestran igual, apagadas y con la nota "no
+aplica", porque el auxiliar necesita saber que esas dos columnas de EFFI van
+vacías (no es que falte el dato).
+
+Los números se muestran **en formato de carga, no de lectura**: sin separador
+de miles y con coma decimal, tal como se ven en la hoja. Es a propósito —
+estas cifras se copian a EFFI, y un `$1.386.554,62` no se puede pegar como
+número.
+
+Mientras se ven los datos de bodega, la tarjeta "Precio sugerido para tienda"
+**se oculta**: es el mismo número que "Tarifa 3 (Valor CO.)" y verlo dos veces
+solo estorba. Para el resto del equipo, que no ve este bloque, la tarjeta
+sigue igual que siempre.
 
 Las cuatro cifras salen de la **misma fila de `pricing_gramo`** que el precio
 de tienda (columna F `costo`, columna G `shopi_gr_cop`), así que la app **no

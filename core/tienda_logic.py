@@ -51,15 +51,22 @@ def obtener_tarifas_gramo(ruta_credenciales):
                 valor_gr = int(re.sub(r"[$.,\s]", "", fila[6]))  # columna G (shopi_gr_cop)
             except (IndexError, ValueError):
                 continue
-            # Costo por gramo (columna F): solo lo usan los auxiliares de
-            # bodega. Si falta, se guarda en 0 y el detalle de bodega se omite
-            # — el precio de tienda no depende de esto y debe seguir saliendo.
-            try:
-                costo_gr = int(re.sub(r"[$.,\s]", "", fila[5]))
-            except (IndexError, ValueError):
-                costo_gr = 0
-            tarifas.append({"calidad": calidad, "peso_min": peso_min, "peso_max": peso_max,
-                            "valor_gr": valor_gr, "costo_gr": costo_gr})
+            # Columnas que solo usan los auxiliares de bodega. Si alguna
+            # falta se guarda en 0 y ese dato se omite del detalle — el precio
+            # de tienda no depende de ellas y debe seguir saliendo igual.
+            def col(i):
+                try:
+                    return int(re.sub(r"[$.,\s]", "", fila[i]))
+                except (IndexError, ValueError):
+                    return 0
+            tarifas.append({
+                "calidad": calidad, "peso_min": peso_min, "peso_max": peso_max,
+                "valor_gr": valor_gr,          # G shopi_gr_cop
+                "costo_gr": col(5),            # F costo
+                "usd_gr": col(7),              # H shopi_gr_usd  -> Tarifa 5
+                "joyerias_gr": col(9),         # J joyerias_cop  -> Tarifa 4
+                "mayor_gr": col(10),           # K x_mayor_cop   -> Tarifa 2
+            })
 
         if not tarifas:
             log.warning("La hoja pricing_gramo llegó vacía o con formato inesperado")
@@ -108,10 +115,23 @@ def detalle_bodega(peso, tarifa, precio_tienda):
     """Las cifras con las que los auxiliares cargan un producto a EFFI, todas
     derivadas de la misma fila de pricing_gramo que el precio de tienda:
 
-      - costo            = REDONDEAR.MAS(costo_gr * peso; -2)   (Inputs!L = EFFILoad!S)
-      - precio_minimo    = REDONDEAR(costo * 1,05; 0)           (EFFILoad!T)
-      - valor_co         = el precio de tienda, sin recalcular   (Inputs!M)
-      - tarifa_1         = valor_co / 1,19                       (EFFILoad!AB)
+      - costo         = REDONDEAR.MAS(costo_gr * peso; -2)   (Inputs!L = EFFILoad!S)
+      - precio_minimo = REDONDEAR(costo * 1,05; 0)           (EFFILoad!T)
+      - valor_co      = el precio de tienda, sin recalcular  (Inputs!M)
+      - tarifa_1      = valor_co / 1,19, CON decimales       (EFFILoad!AB)
+      - tarifa_2      = no aplica acá (ver abajo)            (EFFILoad!AC)
+      - tarifa_3      = valor_co, el mismo número            (EFFILoad!AD)
+      - tarifa_4      = no aplica acá (ver abajo)            (EFFILoad!AE)
+      - tarifa_5      = REDONDEAR.MAS(usd_gr * peso; 0), en USD (EFFILoad!AF)
+
+    Tarifa 1 es la única que NO se redondea en la hoja (`=Inputs!M2/1,19`, sin
+    ROUND), así que se entrega con dos decimales como se ve allá.
+
+    Las tarifas 2 y 4 quedan vacías a propósito: en el modelo "Pesado" sus
+    fórmulas exigen que la categoría sea "Pulsera Tejida" Y que haya costo
+    manual, y esta pestaña no pide ninguna de las dos cosas. Se devuelven en
+    None para que la app las muestre como "no aplica" en vez de omitirlas — el
+    auxiliar necesita saber que esas dos columnas de EFFI van vacías.
 
     Vale solo para el modelo de precio "Pesado" (peso y calidad, sin costo
     manual ni segundo set), que es justo lo que pide esta pestaña.
@@ -122,15 +142,22 @@ def detalle_bodega(peso, tarifa, precio_tienda):
         return None
     # Decimal(str(peso)) y no Decimal(peso): así el 1,1 que escribió la
     # persona es exactamente 1,1 y no el float más cercano.
-    costo = _techo(Decimal(costo_gr) * Decimal(str(peso)), 100)
+    peso_d = Decimal(str(peso))
+    costo = _techo(Decimal(costo_gr) * peso_d, 100)
     minimo = (Decimal(costo) * _MARGEN_MINIMO).to_integral_value(rounding=ROUND_HALF_UP)
-    tarifa_1 = (Decimal(precio_tienda) / _IVA).to_integral_value(rounding=ROUND_HALF_UP)
+    tarifa_1 = (Decimal(precio_tienda) / _IVA).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    usd_gr = tarifa.get("usd_gr") or 0
     return {
         "costo": costo,
         "costo_gr": costo_gr,
         "precio_minimo": int(minimo),
         "valor_co": precio_tienda,
-        "tarifa_1": int(tarifa_1),
+        "tarifa_1": float(tarifa_1),
+        "tarifa_2": None,
+        "tarifa_3": precio_tienda,
+        "tarifa_4": None,
+        "tarifa_5": _techo(Decimal(usd_gr) * peso_d, 1) if usd_gr > 0 else None,
+        "usd_gr": usd_gr,
     }
 
 

@@ -7,7 +7,11 @@
 #   Inputs!M  (Valor CO.)  = REDONDEAR.MAS(tarifas_gramo!G * peso; -3)
 #   EFFILoad!S (Costo)         = Inputs!L
 #   EFFILoad!T (Precio mínimo) = REDONDEAR(S * 1,05; 0)
-#   EFFILoad!AB (Tarifa 1)     = Inputs!M / 1,19
+#   EFFILoad!AB (Tarifa 1)     = Inputs!M / 1,19        (SIN redondear)
+#   EFFILoad!AC (Tarifa 2)     = x_mayor_cop  * peso, al millar  -> solo Pulsera
+#   EFFILoad!AD (Tarifa 3)     = Inputs!M                          Tejida con
+#   EFFILoad!AE (Tarifa 4)     = joyerias_cop * peso, al millar  -> costo manual
+#   EFFILoad!AF (Tarifa 5)     = REDONDEAR.MAS(shopi_gr_usd * peso; 0), en USD
 #
 # Si alguna de esas fórmulas cambia en la hoja, esta prueba es la que avisa.
 # Uso: python tools/test_tienda.py
@@ -31,15 +35,17 @@ def chk(cond, msg):
 # Réplica de dos filas de pricing_gramo (columnas C, D, E, F, G)
 TARIFAS = [
     {"calidad": "Nacional Corriente", "peso_min": 2.0, "peso_max": 4.0,
-     "valor_gr": 532000, "costo_gr": 345000},
+     "valor_gr": 532000, "costo_gr": 345000, "usd_gr": 202,
+     "joyerias_gr": 405000, "mayor_gr": 425000},
     {"calidad": "Recargo +1", "peso_min": 0.05, "peso_max": 3.0,
-     "valor_gr": 630000, "costo_gr": 390000},
+     "valor_gr": 630000, "costo_gr": 390000, "usd_gr": 239,
+     "joyerias_gr": 532000, "mayor_gr": 560000},
     # Fila sin costo por gramo: el precio de tienda debe seguir saliendo igual
     {"calidad": "Sin costo", "peso_min": 0.0, "peso_max": 100.0,
      "valor_gr": 500000, "costo_gr": 0},
     # Banda ancha, solo para barrer todos los pesos en la prueba del redondeo
     {"calidad": "Barrido", "peso_min": 0.0, "peso_max": 100.0,
-     "valor_gr": 532000, "costo_gr": 345000},
+     "valor_gr": 532000, "costo_gr": 345000, "usd_gr": 202},
 ]
 
 # =====================================================
@@ -80,10 +86,48 @@ chk(d.get("precio_minimo") == 905625,
     f"Precio mínimo = 862.500 x 1,05 = 905.625 -> {d.get('precio_minimo')}")
 chk(d.get("valor_co") == b.get("precio"),
     f"Valor CO. es el mismo precio de tienda, no se recalcula -> {d.get('valor_co')}")
-chk(d.get("tarifa_1") == 1117647,
-    f"Tarifa 1 = 1.330.000 / 1,19 = 1.117.647 (sin IVA) -> {d.get('tarifa_1')}")
+chk(d.get("tarifa_1") == 1117647.06,
+    f"Tarifa 1 = 1.330.000 / 1,19 = 1117647,06 (sin IVA, con decimales) -> {d.get('tarifa_1')}")
 chk(d.get("costo_gr") == 345000,
     f"Informa el costo por gramo usado, para poder auditar la cifra: {d.get('costo_gr')}")
+
+# =====================================================
+# Las cinco tarifas de EFFI, con la fila real que el usuario cargo a mano:
+# 3,1 gr de Nacional Corriente -> Costo 1.069.500, minimo 1.122.975,
+# Tarifa 1 1386554,62, Tarifa 3 1.650.000, Tarifa 5 627. Tarifas 2 y 4 vacias.
+# =====================================================
+t = calcular_precio_tienda("3,1", "Nacional Corriente", TARIFAS, con_bodega=True)
+chk(t["precio"] == 1650000, f"Valor CO de 3,1 gr = 1.650.000 -> {t['precio']}")
+tb = t["bodega"]
+for clave, esperado in (("costo", 1069500), ("precio_minimo", 1122975),
+                        ("tarifa_1", 1386554.62), ("tarifa_3", 1650000),
+                        ("tarifa_5", 627)):
+    chk(tb.get(clave) == esperado,
+        f"{clave} coincide con la hoja: {esperado} -> {tb.get(clave)}")
+chk(tb.get("tarifa_2") is None and tb.get("tarifa_4") is None,
+    f"Tarifas 2 y 4 vienen en None (piden Pulsera Tejida + costo manual): "
+    f"{tb.get('tarifa_2')}, {tb.get('tarifa_4')}")
+chk(tb.get("tarifa_3") == t["precio"],
+    "Tarifa 3 es el mismo Valor CO, no un calculo aparte")
+
+# Tarifa 1 es la unica que la hoja NO redondea: se entrega con dos decimales.
+chk(isinstance(tb["tarifa_1"], float) and round(tb["tarifa_1"], 2) == tb["tarifa_1"],
+    f"Tarifa 1 llega con dos decimales, no redondeada al entero: {tb['tarifa_1']}")
+chk(tb["tarifa_1"] != round(tb["tarifa_1"]),
+    "Tarifa 1 conserva su parte decimal (antes se redondeaba a 1.386.555)")
+
+# Tarifa 5 va en dolares y sube al entero: ceil(239 * 1,5) = ceil(358,5) = 359
+t5 = calcular_precio_tienda("1,5", "Recargo +1", TARIFAS, con_bodega=True)["bodega"]
+chk(t5["tarifa_5"] == 359, f"Tarifa 5 = ceil(239 x 1,5) = 359 -> {t5['tarifa_5']}")
+chk(t5["usd_gr"] == 239, f"Informa el precio/gramo en USD usado: {t5['usd_gr']}")
+
+# Sin la columna de USD en la hoja, la Tarifa 5 se omite en vez de dar 0
+sin_usd = calcular_precio_tienda("2,5", "Barrido", TARIFAS, con_bodega=True)["bodega"]
+chk(sin_usd["tarifa_5"] is not None, "Con usd_gr, la Tarifa 5 se calcula")
+TARIFAS_SIN_USD = [dict(TARIFAS[3], calidad="SinUSD", usd_gr=0)]
+b_su = calcular_precio_tienda("2,5", "SinUSD", TARIFAS_SIN_USD, con_bodega=True)["bodega"]
+chk(b_su["tarifa_5"] is None,
+    f"Sin usd_gr en la hoja, la Tarifa 5 va en None y no en 0: {b_su['tarifa_5']}")
 
 # El costo redondea hacia arriba a la CENTENA (distinto del precio, al millar)
 b2 = calcular_precio_tienda("1,001", "Recargo +1", TARIFAS, con_bodega=True)
