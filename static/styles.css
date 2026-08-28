@@ -260,3 +260,7 @@ details.panel-sec > summary { cursor: pointer; list-style: revert; }
 /* Tarifa que no aplica en este modelo de precio: se muestra para que se sepa
    que esa columna de EFFI va vacía, pero apagada para no confundirla. */
 .bodega-fila.no-aplica .bodega-val { color: var(--texto-suave); font-weight: normal; font-style: italic; }
+/* Cifra de bodega que se puede copiar con un clic */
+.bodega-fila.copiable { cursor: pointer; }
+.bodega-fila.copiable:hover { outline: 1px solid var(--borde); }
+.bodega-fila.copiada .bodega-val { color: var(--verde); }

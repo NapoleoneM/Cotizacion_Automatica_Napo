@@ -293,6 +293,32 @@ function fmtCarga(n) {
   return String(n).replace(".", ",");
 }
 
+// Lo que se copia al portapapeles, que NO es lo que se ve: los enteros van sin
+// los puntos de miles para poder pegarlos en EFFI como número. La Tarifa 1 es
+// la excepción — se copia igual que se muestra (8605042,62), porque así es
+// como va en la plantilla.
+function valorCrudo(n) {
+  return Number.isInteger(n) ? String(n) : String(n).replace(".", ",");
+}
+
+async function copiarAlPortapapeles(texto) {
+  try {
+    await navigator.clipboard.writeText(texto);
+    return true;
+  } catch {
+    // Sin permiso de portapapeles (http, o el navegador lo bloquea): se cae
+    // al truco del textarea, que funciona en cualquier parte.
+    try {
+      const ta = document.createElement("textarea");
+      ta.value = texto; ta.style.position = "fixed"; ta.style.opacity = "0";
+      document.body.append(ta); ta.select();
+      document.execCommand("copy");
+      ta.remove();
+      return true;
+    } catch { return false; }
+  }
+}
+
 // El bloque solo aparece si el servidor mandó las cifras. Quien decide es el
 // servidor (auxiliar de bodega + "En zona presencial"), no este archivo.
 function pintarBodega(d, calidad) {
@@ -306,11 +332,31 @@ function pintarBodega(d, calidad) {
   const grid = $("#bodega-grid");
   grid.innerHTML = "";
   CAMPOS_BODEGA.forEach(([etq, clave, ayuda]) => {
-    const aplica = b[clave] !== null && b[clave] !== undefined;
-    const fila = el("div", "bodega-fila" + (aplica ? "" : " no-aplica"));
-    fila.title = ayuda;
+    const valor = b[clave];
+    const aplica = valor !== null && valor !== undefined;
+    const fila = el("div", "bodega-fila" + (aplica ? " copiable" : " no-aplica"));
     fila.append(el("span", "bodega-etq", etq));
-    fila.append(el("span", "bodega-val", fmtCarga(b[clave])));
+    const val = el("span", "bodega-val", fmtCarga(valor));
+    fila.append(val);
+    if (!aplica) {
+      fila.title = ayuda;
+      grid.append(fila);
+      return;
+    }
+    // Se ve con puntos de miles, se copia en crudo: es lo que EFFI necesita.
+    const crudo = valorCrudo(valor);
+    fila.title = `${ayuda}. Clic para copiar ${crudo}`;
+    fila.onclick = async () => {
+      if (!(await copiarAlPortapapeles(crudo))) return;
+      const previo = val.textContent;
+      fila.classList.add("copiada");
+      val.textContent = "copiado ✓";
+      clearTimeout(fila._t);
+      fila._t = setTimeout(() => {
+        val.textContent = previo;
+        fila.classList.remove("copiada");
+      }, 1200);
+    };
     grid.append(fila);
   });
 
@@ -462,8 +508,12 @@ $$(".btn-copiar").forEach(btn => {
 // =====================================================
 // CRÉDITOS OCULTOS (doble clic en el título)
 // =====================================================
-$("#titulo-app").addEventListener("dblclick", () => {
-  const c = $("#creditos"); c.hidden = !c.hidden;
+// Doble clic en el título O en el logo: los dos abren y cierran lo mismo.
+[$("#titulo-app"), $("#logo")].forEach(elemento => {
+  if (!elemento) return;
+  elemento.addEventListener("dblclick", () => {
+    const c = $("#creditos"); c.hidden = !c.hidden;
+  });
 });
 
 // =====================================================

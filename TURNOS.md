@@ -265,6 +265,12 @@ Los enteros llevan **separador de miles** para leerlos de un vistazo
 (`8605042,02`): es la única con decimales, y así se reconoce al compararla
 contra la plantilla. Ninguna lleva `$` — son cifras de carga, no de lectura.
 
+**Un clic sobre cualquier cifra la copia al portapapeles**, y lo que se copia
+NO es lo que se ve: los enteros van sin los puntos de miles (`6900000`) para
+poder pegarlos en EFFI como número. La Tarifa 1 se copia igual que se muestra,
+porque así va en la plantilla. La fila confirma con un "copiado ✓" por un
+segundo. Las que dicen "no aplica" no son clicables.
+
 Mientras se ven los datos de bodega, la tarjeta "Precio sugerido para tienda"
 **se oculta**: es el mismo número que "Tarifa 3 (Valor CO.)" y verlo dos veces
 solo estorba. Para el resto del equipo, que no ve este bloque, la tarjeta
