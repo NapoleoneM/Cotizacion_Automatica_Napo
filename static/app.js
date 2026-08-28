@@ -283,11 +283,13 @@ const CAMPOS_BODEGA = [
   ["Tarifa 5 (USD)", "tarifa_5", "EFFI columna AF · precio por gramo en dólares × peso, al entero"],
 ];
 
-// Formato de CARGA, no de lectura: tal como se ve en la hoja, sin separador de
-// miles y con coma decimal. Es a propósito — estas cifras se copian a EFFI, y
-// un "$1.386.554,62" no se puede pegar como número.
+// Los valores enteros llevan separador de miles para poder leerlos de un
+// vistazo. La Tarifa 1 es la excepción: se deja tal cual sale de la hoja
+// (8605042,62) porque es la única con decimales y así se reconoce al
+// compararla contra la plantilla. Ninguno lleva "$": son cifras de carga.
 function fmtCarga(n) {
   if (n === null || n === undefined) return "no aplica";
+  if (Number.isInteger(n)) return n.toLocaleString("es-CO");
   return String(n).replace(".", ",");
 }
 

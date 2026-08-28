@@ -46,11 +46,15 @@ def calcular_cotizacion(joyas, medio_pago, aplicar_envio, tipo_envio, envio_manu
         if subtotal > 1500000:
             return {"error": "Este medio de pago no está disponible para este monto (Máx $1.500.000)."}
         
+        # Tarifa por tramo del valor de la joya (tabla de la transportadora).
+        # Los límites van con el +1 que ya traía el código desde el principio;
+        # no se tocan para no cambiar el resultado de una cotización existente.
         seguro_ce = round(subtotal * 0.012)
         if subtotal <= 500001: tarifa_base = 30000
         elif subtotal <= 800001: tarifa_base = 40000
         elif subtotal <= 1000001: tarifa_base = 50000
-        else: tarifa_base = 70000
+        elif subtotal <= 1200001: tarifa_base = 70000
+        else: tarifa_base = 90000
 
         envio = tarifa_base + seguro_ce
         # --- CAMBIO: Se agregó "1.2%" al texto del seguro Contra Entrega

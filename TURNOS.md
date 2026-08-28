@@ -260,10 +260,10 @@ ninguna de las dos cosas. Se muestran igual, apagadas y con la nota "no
 aplica", porque el auxiliar necesita saber que esas dos columnas de EFFI van
 vacías (no es que falte el dato).
 
-Los números se muestran **en formato de carga, no de lectura**: sin separador
-de miles y con coma decimal, tal como se ven en la hoja. Es a propósito —
-estas cifras se copian a EFFI, y un `$1.386.554,62` no se puede pegar como
-número.
+Los enteros llevan **separador de miles** para leerlos de un vistazo
+(`6.900.000`). La Tarifa 1 es la excepción y se deja tal cual sale de la hoja
+(`8605042,02`): es la única con decimales, y así se reconoce al compararla
+contra la plantilla. Ninguna lleva `$` — son cifras de carga, no de lectura.
 
 Mientras se ven los datos de bodega, la tarjeta "Precio sugerido para tienda"
 **se oculta**: es el mismo número que "Tarifa 3 (Valor CO.)" y verlo dos veces
