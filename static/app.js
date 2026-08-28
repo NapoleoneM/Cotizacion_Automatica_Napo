@@ -336,8 +336,13 @@ function pintarBodega(d, calidad) {
     const aplica = valor !== null && valor !== undefined;
     const fila = el("div", "bodega-fila" + (aplica ? " copiable" : " no-aplica"));
     fila.append(el("span", "bodega-etq", etq));
-    const val = el("span", "bodega-val", fmtCarga(valor));
-    fila.append(val);
+    // El aviso va en el MEDIO de la fila, entre la etiqueta y la cifra: así
+    // confirma la copia sin tapar el número, que es justo lo que uno quiere
+    // ver para comprobar que copió el correcto.
+    const aviso = el("span", "bodega-aviso", "copiado ✓");
+    aviso.hidden = true;
+    fila.append(aviso);
+    fila.append(el("span", "bodega-val", fmtCarga(valor)));
     if (!aplica) {
       fila.title = ayuda;
       grid.append(fila);
@@ -348,14 +353,9 @@ function pintarBodega(d, calidad) {
     fila.title = `${ayuda}. Clic para copiar ${crudo}`;
     fila.onclick = async () => {
       if (!(await copiarAlPortapapeles(crudo))) return;
-      const previo = val.textContent;
-      fila.classList.add("copiada");
-      val.textContent = "copiado ✓";
+      aviso.hidden = false;
       clearTimeout(fila._t);
-      fila._t = setTimeout(() => {
-        val.textContent = previo;
-        fila.classList.remove("copiada");
-      }, 1200);
+      fila._t = setTimeout(() => { aviso.hidden = true; }, 1500);
     };
     grid.append(fila);
   });

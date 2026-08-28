@@ -268,8 +268,10 @@ contra la plantilla. Ninguna lleva `$` — son cifras de carga, no de lectura.
 **Un clic sobre cualquier cifra la copia al portapapeles**, y lo que se copia
 NO es lo que se ve: los enteros van sin los puntos de miles (`6900000`) para
 poder pegarlos en EFFI como número. La Tarifa 1 se copia igual que se muestra,
-porque así va en la plantilla. La fila confirma con un "copiado ✓" por un
-segundo. Las que dicen "no aplica" no son clicables.
+porque así va en la plantilla. La fila confirma con un "copiado ✓" que aparece
+**al lado** de la cifra, no encima: el número tiene que seguir a la vista para
+poder comprobar que se copió el correcto. Las que dicen "no aplica" no son
+clicables.
 
 Mientras se ven los datos de bodega, la tarjeta "Precio sugerido para tienda"
 **se oculta**: es el mismo número que "Tarifa 3 (Valor CO.)" y verlo dos veces
