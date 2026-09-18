@@ -85,7 +85,8 @@ def calcular_cotizacion(joyas, medio_pago, aplicar_envio, tipo_envio, envio_manu
     detalle_recargo = ""
     total_final = total_base
 
-    if medio_pago in ["Addi", "Sistecredito"]:
+    # Addi sigue con su recargo por escalones segun el monto.
+    if medio_pago == "Addi":
         if total_base < 2000000: pct, pct_str = 0.06, "6%"
         elif total_base < 4000000: pct, pct_str = 0.08, "8%"
         elif total_base < 6000000: pct, pct_str = 0.10, "10%"
@@ -96,13 +97,17 @@ def calcular_cotizacion(joyas, medio_pago, aplicar_envio, tipo_envio, envio_manu
         
         detalle_recargo = f"Recargo {pct_str} ({recargo:,})".replace(',', '.')
 
-    elif medio_pago == "T. Crédito/Débito":
-        if subtotal > 8000000:
+    # Sistecredito paso a cobrar el mismo 3% de la tarjeta, plano y sin
+    # escalones (antes iba con los de Addi). El tope de $8.000.000 es SOLO de
+    # la tarjeta: a Sistecredito no se le puso limite de monto.
+    elif medio_pago in ["T. Crédito/Débito", "Sistecredito"]:
+        if medio_pago == "T. Crédito/Débito" and subtotal > 8000000:
             return {"error": "Este medio de pago ya no es válido para este monto (Máx $8.000.000)."}
-            
+
         recargo = round(total_base * 0.03)
         total_final = total_base + recargo
-        detalle_recargo = f"Recargo Tarjeta 3% ({recargo:,})".replace(',', '.')
+        etiqueta = "Tarjeta" if medio_pago == "T. Crédito/Débito" else "Sistecredito"
+        detalle_recargo = f"Recargo {etiqueta} 3% ({recargo:,})".replace(',', '.')
 
     # 6. Construcción del texto de salida
     texto = f"🦁 *{medio_pago.upper()}*\n\n"

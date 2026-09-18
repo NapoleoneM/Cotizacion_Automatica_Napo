@@ -121,10 +121,45 @@ chk(total_de(r_tc) == 1030000, f"Tarjeta agrega 3% -> {total_de(r_tc)}")
 chk("error" in cotizar(8000001, medio_pago="T. Crédito/Débito"),
     "Tarjeta se rechaza por encima de 8.000.000")
 
+# Addi conserva sus escalones por monto
 r_addi = cotizar(1000000, medio_pago="Addi")
 chk(total_de(r_addi) == 1060000, f"Addi agrega 6% bajo 2.000.000 -> {total_de(r_addi)}")
 r_addi2 = cotizar(3000000, medio_pago="Addi")
 chk(total_de(r_addi2) == 3240000, f"Addi agrega 8% entre 2 y 4 millones -> {total_de(r_addi2)}")
+r_addi3 = cotizar(5000000, medio_pago="Addi")
+chk(total_de(r_addi3) == 5500000, f"Addi agrega 10% entre 4 y 6 millones -> {total_de(r_addi3)}")
+r_addi4 = cotizar(7000000, medio_pago="Addi")
+chk(total_de(r_addi4) == 7840000, f"Addi agrega 12% sobre 6 millones -> {total_de(r_addi4)}")
+
+# =====================================================
+# Sistecredito: desde septiembre de 2026 cobra el MISMO 3% de la tarjeta,
+# plano y sin escalones. Antes iba con los escalones de Addi.
+# =====================================================
+for monto, esperado in ((1000000, 1030000), (3000000, 3090000),
+                        (5000000, 5150000), (9000000, 9270000)):
+    r_sis = cotizar(monto, medio_pago="Sistecredito")
+    chk(total_de(r_sis) == esperado,
+        f"Sistecredito {monto:,} + 3% = {esperado:,}".replace(",", ".") +
+        f" -> {total_de(r_sis)}")
+
+r_sis = cotizar(1000000, medio_pago="Sistecredito")
+chk("Recargo Sistecredito 3%" in r_sis["texto"],
+    "El detalle nombra a Sistecredito, no dice 'Tarjeta'")
+chk(total_de(r_sis) == total_de(cotizar(1000000, medio_pago="T. Crédito/Débito")),
+    "Con el mismo monto, Sistecredito y tarjeta dan el mismo total")
+chk(total_de(cotizar(3000000, medio_pago="Sistecredito"))
+    != total_de(cotizar(3000000, medio_pago="Addi")),
+    "Sistecredito YA NO sigue los escalones de Addi")
+
+# El tope de 8 millones es solo de la tarjeta; a Sistecredito no se le puso
+chk("error" not in cotizar(9000000, medio_pago="Sistecredito"),
+    "Sistecredito no tiene tope de monto")
+
+# El 3% se calcula sobre el total base (subtotal + envio), no sobre el subtotal
+r_sis_env = cotizar(1000000, medio_pago="Sistecredito",
+                    aplicar_envio=True, tipo_envio="Local (Medellín)")
+chk(total_de(r_sis_env) == round((1000000 + 17000) * 1.03),
+    f"El 3% se aplica sobre subtotal + envio -> {total_de(r_sis_env)}")
 
 # =====================================================
 # Casos que deben rechazarse con mensaje, no reventar
