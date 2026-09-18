@@ -143,8 +143,12 @@ for monto, esperado in ((1000000, 1030000), (3000000, 3090000),
         f" -> {total_de(r_sis)}")
 
 r_sis = cotizar(1000000, medio_pago="Sistecredito")
-chk("Recargo Sistecredito 3%" in r_sis["texto"],
-    "El detalle nombra a Sistecredito, no dice 'Tarjeta'")
+chk("Recargo 3%" in r_sis["texto"] and "Sistecredito 3%" not in r_sis["texto"],
+    "La linea del recargo dice solo 'Recargo 3%': el titulo ya nombra el medio de pago")
+chk(r_sis["texto"].startswith("🦁 *SISTECREDITO*"),
+    "El titulo sigue nombrando el medio de pago")
+chk("Recargo Tarjeta 3%" in cotizar(1000000, medio_pago="T. Crédito/Débito")["texto"],
+    "La tarjeta conserva su texto de siempre, 'Recargo Tarjeta 3%'")
 chk(total_de(r_sis) == total_de(cotizar(1000000, medio_pago="T. Crédito/Débito")),
     "Con el mismo monto, Sistecredito y tarjeta dan el mismo total")
 chk(total_de(cotizar(3000000, medio_pago="Sistecredito"))

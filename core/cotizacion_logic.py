@@ -106,8 +106,11 @@ def calcular_cotizacion(joyas, medio_pago, aplicar_envio, tipo_envio, envio_manu
 
         recargo = round(total_base * 0.03)
         total_final = total_base + recargo
-        etiqueta = "Tarjeta" if medio_pago == "T. Crédito/Débito" else "Sistecredito"
-        detalle_recargo = f"Recargo {etiqueta} 3% ({recargo:,})".replace(',', '.')
+        # El titulo del mensaje ya dice el medio de pago, asi que en la linea
+        # del recargo no se repite: Sistecredito sale como "Recargo 3%", igual
+        # que Addi. La tarjeta conserva su "Recargo Tarjeta 3%" de siempre.
+        etiqueta = "Tarjeta " if medio_pago == "T. Crédito/Débito" else ""
+        detalle_recargo = f"Recargo {etiqueta}3% ({recargo:,})".replace(',', '.')
 
     # 6. Construcción del texto de salida
     texto = f"🦁 *{medio_pago.upper()}*\n\n"
