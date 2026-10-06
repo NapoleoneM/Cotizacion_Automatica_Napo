@@ -117,9 +117,12 @@ chk("$26.000" in (envio_de(r_nal) or ""),
     f"Envío nacional = 20.000 + 0,6% (6.000) = 26.000 | {envio_de(r_nal)}")
 
 r_tc = cotizar(1000000, medio_pago="T. Crédito/Débito")
-chk(total_de(r_tc) == 1030000, f"Tarjeta agrega 3% -> {total_de(r_tc)}")
+chk(total_de(r_tc) == 1000000, f"Tarjeta ya no agrega recargo -> {total_de(r_tc)}")
+# El tope NO es un recargo sino un limite del medio de pago: sigue vigente
 chk("error" in cotizar(8000001, medio_pago="T. Crédito/Débito"),
-    "Tarjeta se rechaza por encima de 8.000.000")
+    "Tarjeta se sigue rechazando por encima de 8.000.000")
+chk("exito" in cotizar(8000000, medio_pago="T. Crédito/Débito"),
+    "8.000.000 exacto SÍ se permite (el tope es inclusive)")
 
 # =====================================================
 # Addi y Sistecredito: desde el 06/10/2026 NO llevan recargo.
@@ -155,13 +158,28 @@ for medio in ("Addi", "Sistecredito"):
     chk(r_medio["texto"].split(chr(10), 1)[1] == r_transf["texto"].split(chr(10), 1)[1],
         f"Salvo el titulo, el mensaje de {medio} es identico al de Transferencia")
 
-# La tarjeta NO cambia: conserva su 3%, su texto y su tope
-chk("Recargo Tarjeta 3%" in cotizar(1000000, medio_pago="T. Crédito/Débito")["texto"],
-    "La tarjeta conserva su texto de siempre, 'Recargo Tarjeta 3%'")
-r_tc_env = cotizar(1000000, medio_pago="T. Crédito/Débito",
-                   aplicar_envio=True, tipo_envio="Local (Medellín)")
-chk(total_de(r_tc_env) == round((1000000 + 17000) * 1.03),
-    f"El 3% de la tarjeta sigue sobre subtotal + envio -> {total_de(r_tc_env)}")
+# La tarjeta tampoco cobra recargo: queda igual que los demas medios
+for monto in (1000000, 5000000, 8000000):
+    r = cotizar(monto, medio_pago="T. Crédito/Débito")
+    chk(total_de(r) == monto,
+        f"Tarjeta {monto:,} sin recargo = {monto:,}".replace(",", ".") +
+        f" -> {total_de(r)}")
+r_tc1 = cotizar(1000000, medio_pago="T. Crédito/Débito")
+chk("Recargo" not in r_tc1["texto"], "El mensaje de la tarjeta ya no trae recargo")
+chk("Total base" not in r_tc1["texto"], "Ni la linea de 'Total base'")
+
+# Ya NINGUN medio de pago de retail cobra recargo: todos dan lo mismo
+MEDIOS = ("Transferencia", "Addi", "Sistecredito", "T. Crédito/Débito")
+totales = {m: total_de(cotizar(2000000, medio_pago=m,
+                               aplicar_envio=True, tipo_envio="Local (Medellín)"))
+           for m in MEDIOS}
+chk(len(set(totales.values())) == 1 and set(totales.values()) == {2017000},
+    f"Mismo monto y envio -> mismo total en los 4 medios: {totales}")
+cuerpos = {m: cotizar(2000000, medio_pago=m, aplicar_envio=True,
+                      tipo_envio="Local (Medellín)")["texto"].split(chr(10), 1)[1]
+           for m in MEDIOS}
+chk(len(set(cuerpos.values())) == 1,
+    "Salvo el titulo, los 4 medios producen un mensaje identico")
 
 # =====================================================
 # Casos que deben rechazarse con mensaje, no reventar
