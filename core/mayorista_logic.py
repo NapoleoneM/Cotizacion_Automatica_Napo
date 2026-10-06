@@ -37,6 +37,97 @@ def generar_tachado(texto):
     return ''.join([c + '̶' for c in str(texto)])
 
 # --- GOOGLE SHEETS PARSER ---
+# Las tarifas se ubican por su ROTULO, no por coordenadas. Antes iban con fila
+# y columna fijas (ej. fila 41 = Diamantada) y cualquier cambio en el CORE las
+# desalineaba en silencio: la joya quedaba con precio 0 y el calculo la OMITIA
+# de la cotizacion sin avisar. Paso el 06/10/2026, cuando el CORE fusiono Lisa
+# y Diamantada en una sola fila ("Lisas | Diam.") y agrego las secciones 14K
+# ITALIANO y PLATA 925: la fila 41 dejo de ser Diamantada y paso a ser un
+# encabezado sin numeros.
+#
+# Ahora se puede mover, agregar o quitar filas y secciones en la hoja sin tocar
+# este archivo. Lo unico que debe mantenerse es el TEXTO de los rotulos.
+
+def _norm(texto):
+    """'Fabricaciones ' -> 'FABRICACIONES': compara rotulos sin depender de
+    tildes, mayusculas ni espacios de sobra."""
+    import unicodedata
+    sin_tildes = unicodedata.normalize("NFKD", str(texto or ""))
+    limpio = "".join(c for c in sin_tildes if not unicodedata.combining(c))
+    return " ".join(limpio.upper().split())
+
+
+def _mapear_tarifas(filas, bloque="MAYORISTAS"):
+    """Recorre la hoja y devuelve {SECCION: {ROTULO: (contado, credito)}}.
+
+    La hoja trae VARIOS bloques lado a lado (Cliente, Joyerias, Mayoristas,
+    Neoros...) y todos usan el mismo encabezado 'Tipo | Contado', asi que hay
+    que anclarse al rotulo del bloque pedido. Ojo: ese texto puede aparecer mas
+    de una vez en la hoja (hay un 'MAYORISTAS' suelto arriba a la derecha), por
+    eso se prueban TODOS los candidatos y se usa el primero que tenga un 'Tipo'
+    debajo en su misma columna: ese es el bloque de verdad.
+
+    Desde esa fila hacia abajo, una fila con rotulo y sin numeros es un
+    encabezado de seccion; una con numeros es una tarifa de la seccion vigente.
+    """
+    candidatos = [
+        (i, j)
+        for i, fila in enumerate(filas)
+        for j, celda in enumerate(fila)
+        if _norm(celda) == bloque
+    ]
+
+    for fila_bloque, col_rotulo in candidatos:
+        col_contado = col_credito = fila_inicio = None
+        for i in range(fila_bloque + 1, len(filas)):
+            fila = filas[i]
+            if col_rotulo >= len(fila) or _norm(fila[col_rotulo]) != "TIPO":
+                continue
+            valores = [k for k in range(col_rotulo + 1, len(fila)) if _norm(fila[k])]
+            if valores:
+                fila_inicio = i + 1
+                col_contado = valores[0]
+                col_credito = valores[1] if len(valores) > 1 else valores[0]
+            break
+        if fila_inicio is None:
+            continue                  # este rotulo no era el bloque: probar el siguiente
+
+        mapa, seccion = {}, ""
+        for fila in filas[fila_inicio:]:
+            def celda(c):
+                return fila[c] if c < len(fila) else ""
+
+            rotulo = _norm(celda(col_rotulo))
+            if not rotulo:
+                continue
+            contado = limpiar_numero_mayorista(celda(col_contado))
+            credito = limpiar_numero_mayorista(celda(col_credito))
+            if contado <= 0 and credito <= 0:
+                seccion = rotulo      # fila sin numeros = encabezado de seccion
+                continue
+            if seccion:
+                mapa.setdefault(seccion, {})[rotulo] = (contado, credito)
+        if mapa:
+            return mapa
+    return {}
+
+
+def _tarifa(mapa, seccion, *claves, credito=False):
+    """Primer rotulo de la seccion que empiece por alguna de las claves, o que
+    las contenga. Lo segundo es lo que permite que 'Lisas | Diam.' sirva tanto
+    para Lisa como para Diamantada ahora que el CORE las unio en una fila."""
+    filas = mapa.get(seccion, {})
+    for clave in claves:
+        for rotulo, valores in filas.items():
+            if rotulo.startswith(clave):
+                return valores[1 if credito else 0]
+    for clave in claves:
+        for rotulo, valores in filas.items():
+            if clave in rotulo:
+                return valores[1 if credito else 0]
+    return 0
+
+
 def obtener_precios_sheets(ruta_credenciales):
     """
     Lee los precios desde Google Sheets usando Service Account.
@@ -55,33 +146,31 @@ def obtener_precios_sheets(ruta_credenciales):
             pass
         spreadsheet = gc.open_by_key(_SPREADSHEET_ID)
         worksheet = spreadsheet.worksheet(_HOJA_TABLAS)
-        reader = worksheet.get_all_values()
+        mapa = _mapear_tarifas(worksheet.get_all_values())
 
-        def get_val(row, col):
-            try:
-                return limpiar_numero_mayorista(reader[row][col])
-            except IndexError:
-                return 0
-
+        # Nacional e Italiano cotizan solo con la columna de contado: es como
+        # funciono siempre y no se toca para no mover montos ya pactados.
         precios = {
             "Nacional": {
-                "Corriente": get_val(30, 16),
-                "Especial": get_val(31, 16),
-                "Fabricación": get_val(32, 16)
+                "Corriente": _tarifa(mapa, "NACIONAL", "CORRIENTE"),
+                "Especial": _tarifa(mapa, "NACIONAL", "ESPECIAL"),
+                # El CORE escribe "Fabricaciones" (plural): startswith lo cubre
+                "Fabricación": _tarifa(mapa, "NACIONAL", "FABRICACION"),
             },
             "Italiano": {
-                "Recargo +1": get_val(34, 16),
-                "Recargo +2": get_val(35, 16),
-                "Recargo +3": get_val(36, 16),
-                "Recargo +4": get_val(37, 16),
-                "Recargo +5": get_val(38, 16)
+                f"Recargo +{n}": _tarifa(mapa, "ITALIANO", f"RECARGO +{n}")
+                for n in range(1, 6)
             },
+            # Bolas es el unico que usa las dos columnas. Se aceptan tanto las
+            # filas separadas (Lisa / Diamantada) como la fila unica que las
+            # agrupa: si un rotulo nombra a las dos, sirve para ambas.
             "Bolas": {
-                "Lisa contado": get_val(40, 16),
-                "Lisa crédito": get_val(40, 17),
-                "Diamantada contado": get_val(41, 16),
-                "Diamantada crédito": get_val(41, 17)
-            }
+                "Lisa contado": _tarifa(mapa, "BOLAS", "LISA"),
+                "Lisa crédito": _tarifa(mapa, "BOLAS", "LISA", credito=True),
+                "Diamantada contado": _tarifa(mapa, "BOLAS", "DIAMANTADA", "DIAM"),
+                "Diamantada crédito": _tarifa(mapa, "BOLAS", "DIAMANTADA", "DIAM",
+                                              credito=True),
+            },
         }
         # Si una tarifa llega en 0 es porque el Sheet cambió de estructura o la
         # celda está vacía: se avisa para no cotizar con precios incompletos.
