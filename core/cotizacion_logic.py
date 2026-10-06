@@ -85,32 +85,62 @@ def calcular_cotizacion(joyas, medio_pago, aplicar_envio, tipo_envio, envio_manu
     detalle_recargo = ""
     total_final = total_base
 
-    # Addi sigue con su recargo por escalones segun el monto.
-    if medio_pago == "Addi":
-        if total_base < 2000000: pct, pct_str = 0.06, "6%"
-        elif total_base < 4000000: pct, pct_str = 0.08, "8%"
-        elif total_base < 6000000: pct, pct_str = 0.10, "10%"
-        else: pct, pct_str = 0.12, "12%"
+    # ------------------------------------------------------------------
+    # DIRECTIVA DEL 06/10/2026: Addi y Sistecredito YA NO llevan recargo.
+    # Quedan EXACTAMENTE igual que Transferencia: total = subtotal + envio.
+    # Al no entrar en ningun 'if' se quedan con recargo = 0, y como el texto
+    # solo imprime "Total base" y la linea del recargo cuando recargo > 0, el
+    # mensaje sale limpio, identico al de una transferencia.
+    #
+    # Contra Entrega y T. Credito/Debito NO cambian: conservan sus tarifas,
+    # sus topes de monto y su texto de siempre.
+    #
+    # LOGICA ANTERIOR (se deja escrita por si se vuelven a cobrar recargos):
+    #
+    #   ADDI -> recargo por escalones sobre el TOTAL BASE (subtotal + envio),
+    #   sin tope de monto:
+    #       total_base <  2.000.000  ->  6%
+    #       total_base <  4.000.000  ->  8%
+    #       total_base <  6.000.000  -> 10%
+    #       total_base >= 6.000.000  -> 12%
+    #
+    #     if medio_pago == "Addi":
+    #         if total_base < 2000000: pct, pct_str = 0.06, "6%"
+    #         elif total_base < 4000000: pct, pct_str = 0.08, "8%"
+    #         elif total_base < 6000000: pct, pct_str = 0.10, "10%"
+    #         else: pct, pct_str = 0.12, "12%"
+    #         recargo = round(total_base * pct)
+    #         total_final = total_base + recargo
+    #         detalle_recargo = f"Recargo {pct_str} ({recargo:,})".replace(',', '.')
+    #
+    #   SISTECREDITO -> tuvo DOS etapas:
+    #     1) Hasta agosto de 2026 iba con los MISMOS escalones de Addi; la
+    #        condicion de arriba decia: if medio_pago in ["Addi", "Sistecredito"].
+    #     2) Desde septiembre de 2026 paso a un 3% plano, sin escalones y sin
+    #        tope de monto, compartiendo rama con la tarjeta:
+    #
+    #     elif medio_pago in ["T. Credito/Debito", "Sistecredito"]:
+    #         if medio_pago == "T. Credito/Debito" and subtotal > 8000000:
+    #             return {"error": "Este medio de pago ya no es valido para este monto (Max $8.000.000)."}
+    #         recargo = round(total_base * 0.03)
+    #         total_final = total_base + recargo
+    #         # El titulo ya dice el medio de pago, asi que la linea del recargo
+    #         # no lo repetia: Sistecredito salia como "Recargo 3%".
+    #         etiqueta = "Tarjeta " if medio_pago == "T. Credito/Debito" else ""
+    #         detalle_recargo = f"Recargo {etiqueta}3% ({recargo:,})".replace(',', '.')
+    #
+    #   El tope de $8.000.000 fue SIEMPRE solo de la tarjeta: ni Addi ni
+    #   Sistecredito tuvieron limite de monto en ninguna de sus etapas.
+    # ------------------------------------------------------------------
 
-        recargo = round(total_base * pct)
-        total_final = total_base + recargo
-        
-        detalle_recargo = f"Recargo {pct_str} ({recargo:,})".replace(',', '.')
-
-    # Sistecredito paso a cobrar el mismo 3% de la tarjeta, plano y sin
-    # escalones (antes iba con los de Addi). El tope de $8.000.000 es SOLO de
-    # la tarjeta: a Sistecredito no se le puso limite de monto.
-    elif medio_pago in ["T. Crédito/Débito", "Sistecredito"]:
-        if medio_pago == "T. Crédito/Débito" and subtotal > 8000000:
+    # La tarjeta mantiene su 3% y su tope de $8.000.000.
+    if medio_pago == "T. Crédito/Débito":
+        if subtotal > 8000000:
             return {"error": "Este medio de pago ya no es válido para este monto (Máx $8.000.000)."}
 
         recargo = round(total_base * 0.03)
         total_final = total_base + recargo
-        # El titulo del mensaje ya dice el medio de pago, asi que en la linea
-        # del recargo no se repite: Sistecredito sale como "Recargo 3%", igual
-        # que Addi. La tarjeta conserva su "Recargo Tarjeta 3%" de siempre.
-        etiqueta = "Tarjeta " if medio_pago == "T. Crédito/Débito" else ""
-        detalle_recargo = f"Recargo {etiqueta}3% ({recargo:,})".replace(',', '.')
+        detalle_recargo = f"Recargo Tarjeta 3% ({recargo:,})".replace(',', '.')
 
     # 6. Construcción del texto de salida
     texto = f"🦁 *{medio_pago.upper()}*\n\n"

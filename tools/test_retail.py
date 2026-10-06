@@ -121,49 +121,47 @@ chk(total_de(r_tc) == 1030000, f"Tarjeta agrega 3% -> {total_de(r_tc)}")
 chk("error" in cotizar(8000001, medio_pago="T. Crédito/Débito"),
     "Tarjeta se rechaza por encima de 8.000.000")
 
-# Addi conserva sus escalones por monto
-r_addi = cotizar(1000000, medio_pago="Addi")
-chk(total_de(r_addi) == 1060000, f"Addi agrega 6% bajo 2.000.000 -> {total_de(r_addi)}")
-r_addi2 = cotizar(3000000, medio_pago="Addi")
-chk(total_de(r_addi2) == 3240000, f"Addi agrega 8% entre 2 y 4 millones -> {total_de(r_addi2)}")
-r_addi3 = cotizar(5000000, medio_pago="Addi")
-chk(total_de(r_addi3) == 5500000, f"Addi agrega 10% entre 4 y 6 millones -> {total_de(r_addi3)}")
-r_addi4 = cotizar(7000000, medio_pago="Addi")
-chk(total_de(r_addi4) == 7840000, f"Addi agrega 12% sobre 6 millones -> {total_de(r_addi4)}")
-
 # =====================================================
-# Sistecredito: desde septiembre de 2026 cobra el MISMO 3% de la tarjeta,
-# plano y sin escalones. Antes iba con los escalones de Addi.
+# Addi y Sistecredito: desde el 06/10/2026 NO llevan recargo.
+# Van exactamente igual que Transferencia (total = subtotal + envio).
+# La logica anterior quedo documentada en core/cotizacion_logic.py.
 # =====================================================
-for monto, esperado in ((1000000, 1030000), (3000000, 3090000),
-                        (5000000, 5150000), (9000000, 9270000)):
-    r_sis = cotizar(monto, medio_pago="Sistecredito")
-    chk(total_de(r_sis) == esperado,
-        f"Sistecredito {monto:,} + 3% = {esperado:,}".replace(",", ".") +
-        f" -> {total_de(r_sis)}")
+for medio in ("Addi", "Sistecredito"):
+    for monto in (1000000, 3000000, 5000000, 7000000, 9000000):
+        r = cotizar(monto, medio_pago=medio)
+        chk(total_de(r) == monto,
+            f"{medio} {monto:,} sin recargo = {monto:,}".replace(",", ".") +
+            f" -> {total_de(r)}")
 
-r_sis = cotizar(1000000, medio_pago="Sistecredito")
-chk("Recargo 3%" in r_sis["texto"] and "Sistecredito 3%" not in r_sis["texto"],
-    "La linea del recargo dice solo 'Recargo 3%': el titulo ya nombra el medio de pago")
-chk(r_sis["texto"].startswith("🦁 *SISTECREDITO*"),
-    "El titulo sigue nombrando el medio de pago")
+    r = cotizar(1000000, medio_pago=medio)
+    chk("Recargo" not in r["texto"],
+        f"El mensaje de {medio} ya no trae linea de recargo")
+    chk("Total base" not in r["texto"],
+        f"El mensaje de {medio} ya no trae 'Total base' (no hay recargo que explicar)")
+    chk(r["texto"].startswith(f"🦁 *{medio.upper()}*"),
+        f"El titulo sigue nombrando el medio de pago ({medio})")
+    chk("error" not in cotizar(9000000, medio_pago=medio),
+        f"{medio} no tiene tope de monto")
+
+# Mismo monto y mismo envio => identico a Transferencia, salvo el titulo
+for medio in ("Addi", "Sistecredito"):
+    r_medio = cotizar(1000000, medio_pago=medio,
+                      aplicar_envio=True, tipo_envio="Local (Medellín)")
+    r_transf = cotizar(1000000, medio_pago="Transferencia",
+                       aplicar_envio=True, tipo_envio="Local (Medellín)")
+    chk(total_de(r_medio) == total_de(r_transf) == 1017000,
+        f"{medio} con envio da igual que Transferencia -> {total_de(r_medio)}")
+    # chr(10) = salto de linea: se compara todo menos la primera linea (el titulo)
+    chk(r_medio["texto"].split(chr(10), 1)[1] == r_transf["texto"].split(chr(10), 1)[1],
+        f"Salvo el titulo, el mensaje de {medio} es identico al de Transferencia")
+
+# La tarjeta NO cambia: conserva su 3%, su texto y su tope
 chk("Recargo Tarjeta 3%" in cotizar(1000000, medio_pago="T. Crédito/Débito")["texto"],
     "La tarjeta conserva su texto de siempre, 'Recargo Tarjeta 3%'")
-chk(total_de(r_sis) == total_de(cotizar(1000000, medio_pago="T. Crédito/Débito")),
-    "Con el mismo monto, Sistecredito y tarjeta dan el mismo total")
-chk(total_de(cotizar(3000000, medio_pago="Sistecredito"))
-    != total_de(cotizar(3000000, medio_pago="Addi")),
-    "Sistecredito YA NO sigue los escalones de Addi")
-
-# El tope de 8 millones es solo de la tarjeta; a Sistecredito no se le puso
-chk("error" not in cotizar(9000000, medio_pago="Sistecredito"),
-    "Sistecredito no tiene tope de monto")
-
-# El 3% se calcula sobre el total base (subtotal + envio), no sobre el subtotal
-r_sis_env = cotizar(1000000, medio_pago="Sistecredito",
-                    aplicar_envio=True, tipo_envio="Local (Medellín)")
-chk(total_de(r_sis_env) == round((1000000 + 17000) * 1.03),
-    f"El 3% se aplica sobre subtotal + envio -> {total_de(r_sis_env)}")
+r_tc_env = cotizar(1000000, medio_pago="T. Crédito/Débito",
+                   aplicar_envio=True, tipo_envio="Local (Medellín)")
+chk(total_de(r_tc_env) == round((1000000 + 17000) * 1.03),
+    f"El 3% de la tarjeta sigue sobre subtotal + envio -> {total_de(r_tc_env)}")
 
 # =====================================================
 # Casos que deben rechazarse con mensaje, no reventar
