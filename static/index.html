@@ -78,6 +78,10 @@
           <option>Internacional</option>
         </select>
         <input type="text" id="ret-envio-manual" class="dinero" placeholder="Valor envío intl." style="display:none">
+        <!-- Medida TEMPORAL: regala la tarifa del envío (el seguro se cobra igual).
+             Se marca sola en compras desde $600.000 en joyas; ver static/app.js -->
+        <label class="chk chk-obsequio" title="Regala la tarifa del envío; el seguro se sigue cobrando">
+          <input type="checkbox" id="ret-obsequio-chk" disabled> Obsequiar envío</label>
       </div>
       <div class="fila-opcion">
         <label class="etq">💳 Pago:</label>

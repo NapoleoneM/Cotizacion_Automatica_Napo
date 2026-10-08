@@ -36,7 +36,8 @@ def cotizar(valor, medio_pago="Contra Entrega", **kw):
     return calcular_cotizacion(joyas, medio_pago,
                                kw.get("aplicar_envio", False),
                                kw.get("tipo_envio", ""),
-                               kw.get("envio_manual", ""))
+                               kw.get("envio_manual", ""),
+                               obsequiar_envio=kw.get("obsequiar_envio", False))
 
 
 def envio_de(res):
@@ -180,6 +181,85 @@ cuerpos = {m: cotizar(2000000, medio_pago=m, aplicar_envio=True,
            for m in MEDIOS}
 chk(len(set(cuerpos.values())) == 1,
     "Salvo el titulo, los 4 medios producen un mensaje identico")
+
+# =====================================================
+# Obsequio de envio — medida TEMPORAL (08/10/2026)
+# Se regala la TARIFA del envio, el seguro se cobra igual, y en el mensaje la
+# tarifa sale tachada con "¡GRATIS!". No aplica a Contra Entrega ni a
+# Internacional. El marcado automatico desde $600.000 vive en el front.
+# =====================================================
+TACHA = chr(0x336)          # raya Unicode que se pone despues de cada caracter
+
+
+def sin_tachar(txt):
+    return (txt or "").replace(TACHA, "")
+
+
+def tachado(txt):
+    return "".join(c + TACHA for c in txt)
+
+
+def regalo(valor, tipo, medio="Transferencia", **kw):
+    return cotizar(valor, medio_pago=medio, aplicar_envio=True, tipo_envio=tipo,
+                   obsequiar_envio=True, **kw)
+
+
+# Nacional: se regalan los $20.000 y se cobra el 0,6% de seguro
+r = regalo(1000000, "Nacional")
+chk(total_de(r) == 1006000,
+    f"Nacional obsequiado: 1.000.000 + solo el seguro 6.000 = 1.006.000 -> {total_de(r)}")
+linea = envio_de(r) or ""
+chk(sin_tachar(linea) == "🚚 Envío Nacional $20.000 ¡GRATIS! + Seguro 0.6% (6.000): $6.000",
+    f"Linea nacional: tarifa + GRATIS + seguro cobrado | {sin_tachar(linea)}")
+chk(tachado("$20.000") in linea, "Lo tachado son exactamente los $20.000, caracter por caracter")
+chk(TACHA not in linea.split("Seguro")[1], "El seguro NO se tacha: se sigue cobrando")
+chk("Seguro 0.6% (6.000): $6.000" in linea, "El envio a pagar queda en solo el seguro")
+
+# Locales: se regala toda la tarifa y no hay seguro
+r = regalo(1000000, "Local (Medellín)")
+chk(total_de(r) == 1000000, f"Medellin obsequiado no suma envio -> {total_de(r)}")
+chk(envio_de(r) == "🚚 Envío Local Medellín: " + tachado("$17.000") + " ¡GRATIS!",
+    f"Linea Medellin con los 17.000 tachados | {sin_tachar(envio_de(r))}")
+r = regalo(1000000, "Local (Área Metropolitana)")
+chk(total_de(r) == 1000000, f"Area Metropolitana obsequiada no suma envio -> {total_de(r)}")
+chk(envio_de(r) == "🚚 Envío Área Metropolitana: " + tachado("$22.000") + " ¡GRATIS!",
+    f"Linea Area Metropolitana con los 22.000 tachados | {sin_tachar(envio_de(r))}")
+
+# El descuento es exactamente la tarifa: misma cotizacion sin y con obsequio
+for tipo, tarifa in (("Nacional", 20000), ("Local (Medellín)", 17000),
+                     ("Local (Área Metropolitana)", 22000)):
+    sin = cotizar(800000, medio_pago="Transferencia", aplicar_envio=True, tipo_envio=tipo)
+    con = regalo(800000, tipo)
+    chk(total_de(sin) - total_de(con) == tarifa,
+        f"{tipo}: el obsequio descuenta exactamente {tarifa:,}".replace(",", ".") +
+        f" ({total_de(sin)} -> {total_de(con)})")
+
+# Funciona igual con todos los medios de pago que no son Contra Entrega
+for medio in ("Transferencia", "Addi", "Sistecredito", "T. Crédito/Débito"):
+    r = regalo(700000, "Nacional", medio=medio)
+    chk(total_de(r) == 700000 + round(700000 * 0.006),
+        f"{medio} con obsequio nacional = 700.000 + seguro -> {total_de(r)}")
+
+# Contra Entrega: el obsequio se ignora (tiene su propia tarifa de transportadora)
+sin = cotizar(1000000, medio_pago="Contra Entrega")
+con = cotizar(1000000, medio_pago="Contra Entrega", obsequiar_envio=True)
+chk(sin == con, "Contra Entrega ignora el obsequio: misma cotizacion con o sin casilla")
+
+# Internacional: queda fuera, se cobra el valor manual completo
+r = regalo(1000000, "Internacional", envio_manual="150.000")
+chk(total_de(r) == 1150000 and TACHA not in (envio_de(r) or ""),
+    f"Internacional ignora el obsequio y cobra los 150.000 -> {total_de(r)}")
+
+# Sin "Agregar envio" no hay nada que regalar
+r = cotizar(1000000, medio_pago="Transferencia", aplicar_envio=False,
+            tipo_envio="Nacional", obsequiar_envio=True)
+chk(total_de(r) == 1000000 and envio_de(r) is None,
+    "Sin envio agregado, la casilla no cambia nada ni agrega linea")
+
+# El valor por defecto es NO obsequiar: lo de siempre queda identico
+chk(envio_de(cotizar(1000000, medio_pago="Transferencia", aplicar_envio=True,
+                     tipo_envio="Nacional")) == "🚚 Envío Nacional $20.000 + Seguro 0.6% (6.000): $26.000",
+    "Sin obsequio la linea nacional no cambia ni un caracter")
 
 # =====================================================
 # Casos que deben rechazarse con mensaje, no reventar

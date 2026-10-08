@@ -110,15 +110,55 @@ $("#ret-pago").onchange = () => {
 };
 $("#calc-retail").onclick = calcularRetail;
 
+// ---------- Obsequio de envío — medida TEMPORAL (08/10/2026) ----------
+// Desde este subtotal en joyas la casilla "Obsequiar envío" se marca sola.
+// Para terminar la promoción basta con UMBRAL_OBSEQUIO = Infinity: la casilla
+// sigue disponible para usarla a mano. Qué se regala lo decide el servidor
+// (core/cotizacion_logic.py): la tarifa del envío, nunca el seguro.
+const UMBRAL_OBSEQUIO = 600000;
+// Mismos tipos que TIPOS_ENVIO_OBSEQUIABLES en el servidor. Internacional queda
+// fuera: su valor es manual y puede ser alto.
+const ENVIOS_OBSEQUIABLES = ["Local (Medellín)", "Local (Área Metropolitana)", "Nacional"];
+// null = la casilla se decide sola por el umbral; true/false = el asesor la
+// tocó y manda él, hasta que empiece una cotización nueva (joyas vacías).
+let obsequioManual = null;
+
+function subtotalRetail() {
+  return filasRetail.reduce((suma, f) => {
+    if (f.vacia()) return suma;
+    const d = f.get();
+    return suma + d.cantidad * (parseInt(String(d.valor_unitario).replace(/\D/g, ""), 10) || 0);
+  }, 0);
+}
+
+function sincronizarObsequio() {
+  const chk = $("#ret-obsequio-chk");
+  if (filasRetail.every(f => f.vacia())) obsequioManual = null;   // cotización nueva
+  const disponible = $("#ret-envio-chk").checked
+    && $("#ret-pago").value !== "Contra Entrega"
+    && ENVIOS_OBSEQUIABLES.includes($("#ret-envio-tipo").value);
+  chk.disabled = !disponible;
+  if (!disponible) { chk.checked = false; return; }
+  chk.checked = obsequioManual !== null ? obsequioManual
+                                        : subtotalRetail() >= UMBRAL_OBSEQUIO;
+}
+
+$("#ret-obsequio-chk").onchange = e => {
+  obsequioManual = e.target.checked;
+  calcRetailDeb();
+};
+
 function toggleEnvioRet() {
   const on = $("#ret-envio-chk").checked;
   $("#ret-envio-tipo").disabled = !on;
   const intl = on && $("#ret-envio-tipo").value === "Internacional";
   $("#ret-envio-manual").style.display = intl ? "" : "none";
+  sincronizarObsequio();
   calcRetailDeb();
 }
 
 async function calcularRetail() {
+  sincronizarObsequio();   // el subtotal pudo cruzar el umbral mientras escribía
   if (filasRetail.every(f => f.vacia())) {
     $("#res-retail").textContent = "💡 Ingrese el nombre y el valor de cada joya.\n\nLa cotización se genera automáticamente mientras escribe.";
     return;
@@ -129,6 +169,7 @@ async function calcularRetail() {
     aplicar_envio: $("#ret-envio-chk").checked,
     tipo_envio: $("#ret-envio-tipo").value,
     envio_manual: $("#ret-envio-manual").value,
+    obsequiar_envio: $("#ret-obsequio-chk").checked,
   };
   const r = await fetch("/api/retail", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
   const d = await r.json();

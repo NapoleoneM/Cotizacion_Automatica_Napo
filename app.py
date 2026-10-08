@@ -261,6 +261,8 @@ class RetailReq(BaseModel):
     aplicar_envio: bool = False
     tipo_envio: str = Field("Nacional", max_length=40)
     envio_manual: str = Field("", max_length=30)
+    # Medida temporal: regala la tarifa del envío (el seguro se cobra igual)
+    obsequiar_envio: bool = False
 
 
 class JoyaMayorista(BaseModel):
@@ -307,6 +309,7 @@ def api_retail(req: RetailReq):
     return calcular_cotizacion(
         joyas=joyas, medio_pago=req.medio_pago, aplicar_envio=req.aplicar_envio,
         tipo_envio=req.tipo_envio, envio_manual=req.envio_manual,
+        obsequiar_envio=req.obsequiar_envio,
     )
 
 

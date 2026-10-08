@@ -10,7 +10,22 @@ def limpiar_numero(texto):
     except ValueError:
         return 0
 
-def calcular_cotizacion(joyas, medio_pago, aplicar_envio, tipo_envio, envio_manual):
+# Tachado con el caracter Unicode U+0336 (raya sobre cada caracter). Es el
+# mismo que usa mayorista_logic.generar_tachado: se ve tachado tanto en
+# WhatsApp como en Instagram, a diferencia del ~texto~ que solo entiende
+# WhatsApp. Se duplica aqui para no hacer depender retail de gspread.
+def tachar(texto):
+    return "".join(c + "\u0336" for c in str(texto))
+
+
+# OBSEQUIO DE ENVIO — medida TEMPORAL (08/10/2026). Tipos de envio cuya tarifa
+# se puede regalar. Internacional queda fuera a proposito: su valor es manual
+# y puede ser alto, y la casilla se marca sola desde cierto monto.
+TIPOS_ENVIO_OBSEQUIABLES = ("Local (Medellín)", "Local (Área Metropolitana)", "Nacional")
+
+
+def calcular_cotizacion(joyas, medio_pago, aplicar_envio, tipo_envio, envio_manual,
+                        obsequiar_envio=False):
     """Procesa los datos y retorna el texto formateado o un error."""
     if not joyas:
         return {"error": "Debe agregar al menos una joya para calcular."}
@@ -62,17 +77,32 @@ def calcular_cotizacion(joyas, medio_pago, aplicar_envio, tipo_envio, envio_manu
     
     else:
         if aplicar_envio:
+            # OBSEQUIO DE ENVIO — medida TEMPORAL (08/10/2026). Se regala la
+            # TARIFA del envio (Nacional $20.000, Medellin $17.000, Area Metro
+            # $22.000) y el seguro se sigue cobrando. En el mensaje la tarifa
+            # sale tachada junto a "¡GRATIS!": el cliente ve el descuento.
+            # No aplica a Contra Entrega (va por su propia rama, arriba) ni a
+            # Internacional (ver TIPOS_ENVIO_OBSEQUIABLES). Que la casilla se
+            # marque sola desde $600.000 en joyas se decide en static/app.js;
+            # aqui solo se respeta lo que llega.
+            # Sin obsequio el texto queda EXACTAMENTE como estaba.
+            regala = bool(obsequiar_envio) and tipo_envio in TIPOS_ENVIO_OBSEQUIABLES
+
+            def tarifa_txt(valor):
+                txt = f"${valor:,}".replace(',', '.')
+                return f"{tachar(txt)} ¡GRATIS!" if regala else txt
+
             if tipo_envio == "Local (Medellín)":
-                envio = 17000
-                detalle_envio = f"Envío Local Medellín: ${envio:,}".replace(',', '.')
+                envio = 0 if regala else 17000
+                detalle_envio = f"Envío Local Medellín: {tarifa_txt(17000)}"
             elif tipo_envio == "Local (Área Metropolitana)":
-                envio = 22000
-                detalle_envio = f"Envío Área Metropolitana: ${envio:,}".replace(',', '.')
+                envio = 0 if regala else 22000
+                detalle_envio = f"Envío Área Metropolitana: {tarifa_txt(22000)}"
             elif tipo_envio == "Nacional":
                 seguro_nal = round(subtotal * 0.006)
-                envio = 20000 + seguro_nal
+                envio = seguro_nal if regala else 20000 + seguro_nal
                 # --- CAMBIO: Se agregó "0.6%" al texto del seguro Nacional
-                detalle_envio = f"Envío Nacional $20.000 + Seguro 0.6% ({seguro_nal:,}): ${envio:,}".replace(',', '.')
+                detalle_envio = f"Envío Nacional {tarifa_txt(20000)} + Seguro 0.6% ({seguro_nal:,}): ${envio:,}".replace(',', '.')
             elif tipo_envio == "Internacional":
                 envio = limpiar_numero(envio_manual)
                 detalle_envio = f"Envío Internacional: ${envio:,}".replace(',', '.')
