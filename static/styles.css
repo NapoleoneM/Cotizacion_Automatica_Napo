@@ -88,8 +88,8 @@ h1 { font-size: 22px; margin: 0; }
 .etq { font-weight: bold; font-size: 13px; display: inline-flex; align-items: center; gap: 6px; }
 .chk { font-size: 13px; display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
 .chk input[type="checkbox"] { width: 16px; height: 16px; margin: 0; accent-color: var(--oro); cursor: pointer; }
-/* Obsequio de envío (medida temporal): apagado mientras no aplica (sin envío,
-   Contra Entrega o Internacional) y en dorado cuando el cliente recibe el regalo */
+/* Obsequio de envío (medida temporal): apagado mientras no aplica (sin envío
+   agregado) y en dorado cuando el cliente recibe el regalo */
 .chk-obsequio:has(input:disabled) { opacity: .45; cursor: not-allowed; }
 .chk-obsequio:has(input:disabled) input { cursor: not-allowed; }
 .chk-obsequio:has(input:checked) { color: var(--oro); font-weight: bold; }

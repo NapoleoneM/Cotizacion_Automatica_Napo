@@ -18,10 +18,36 @@ def tachar(texto):
     return "".join(c + "\u0336" for c in str(texto))
 
 
-# OBSEQUIO DE ENVIO — medida TEMPORAL (08/10/2026). Tipos de envio cuya tarifa
-# se puede regalar. Internacional queda fuera a proposito: su valor es manual
-# y puede ser alto, y la casilla se marca sola desde cierto monto.
-TIPOS_ENVIO_OBSEQUIABLES = ("Local (Medellín)", "Local (Área Metropolitana)", "Nacional")
+# PROMOCION DE ENVIO — medida TEMPORAL: campana de ~1 mes desde el 08/10/2026.
+# Con la casilla "Obsequiar envio" se descuentan $20.000 de la tarifa del envio
+# que toque, sea cual sea (Contra Entrega e Internacional incluidos). Si la
+# tarifa es menor (Medellin, $17.000) el envio queda gratis: nunca baja de $0.
+# Que la casilla se marque sola desde $600.000 en joyas se decide en
+# static/app.js; aqui solo se respeta lo que llega.
+#
+# Historia: el 08/10 empezo regalando la tarifa COMPLETA solo en Medellin,
+# Area Metropolitana y Nacional. Ese mismo dia paso a esta regla general de
+# $20.000 fijos, con Contra Entrega incluido.
+DESCUENTO_ENVIO = 20000
+
+
+def _tarifa_con_descuento(tarifa, aplicar):
+    """(lo que se cobra, texto de la tarifa para el mensaje).
+
+    Sin descuento el texto es el de siempre ("$17.000"). Con descuento la
+    tarifa sale tachada y al lado lo que paga el cliente, para que vea el
+    regalo: "[$50.000 tachado] $30.000 ¡Te regalamos $20.000!", o la tarifa
+    tachada con "¡GRATIS!" si el descuento la cubre toda.
+    """
+    normal = f"${tarifa:,}".replace(',', '.')
+    descuento = min(DESCUENTO_ENVIO, tarifa) if aplicar else 0
+    if descuento <= 0:
+        return tarifa, normal
+    cobrado = tarifa - descuento
+    if cobrado == 0:
+        return 0, f"{tachar(normal)} ¡GRATIS!"
+    regalo = f"${descuento:,}".replace(',', '.')
+    return cobrado, f"{tachar(normal)} ${cobrado:,} ¡Te regalamos {regalo}!".replace(',', '.')
 
 
 def calcular_cotizacion(joyas, medio_pago, aplicar_envio, tipo_envio, envio_manual,
@@ -64,48 +90,52 @@ def calcular_cotizacion(joyas, medio_pago, aplicar_envio, tipo_envio, envio_manu
         # Tarifa por tramo del valor de la joya (tabla de la transportadora).
         # Los límites van con el +1 que ya traía el código desde el principio;
         # no se tocan para no cambiar el resultado de una cotización existente.
-        seguro_ce = round(subtotal * 0.012)
         if subtotal <= 500001: tarifa_base = 30000
         elif subtotal <= 800001: tarifa_base = 40000
         elif subtotal <= 1000001: tarifa_base = 50000
         elif subtotal <= 1200001: tarifa_base = 70000
         else: tarifa_base = 90000
 
-        envio = tarifa_base + seguro_ce
-        # --- CAMBIO: Se agregó "1.2%" al texto del seguro Contra Entrega
-        detalle_envio = f"Envío Contra Entrega ${tarifa_base:,} + Seguro 1.2% ({seguro_ce:,}): ${envio:,}".replace(',', '.')
+        # ------------------------------------------------------------------
+        # DIRECTIVA DEL 08/10/2026: Contra Entrega YA NO cobra el seguro del
+        # 1,2%. Se cobra solo la tarifa del tramo (menos la promocion, si
+        # aplica). Va para TODAS las cotizaciones contra entrega, no solo las
+        # de la promocion.
+        #
+        # LOGICA ANTERIOR (se deja escrita por si se vuelve a cobrar):
+        #   El seguro era el 1,2% del SUBTOTAL de las joyas (sin el envio),
+        #   igual en todos los tramos, y se sumaba a la tarifa:
+        #
+        #     seguro_ce = round(subtotal * 0.012)
+        #     envio = tarifa_base + seguro_ce
+        #     detalle_envio = f"Envío Contra Entrega ${tarifa_base:,} + Seguro 1.2% ({seguro_ce:,}): ${envio:,}".replace(',', '.')
+        #
+        #   En el mensaje salia asi (compra de $820.000):
+        #     🚚 Envío Contra Entrega $50.000 + Seguro 1.2% (9.840): $59.840
+        # ------------------------------------------------------------------
+        envio, tarifa_txt = _tarifa_con_descuento(tarifa_base, obsequiar_envio)
+        detalle_envio = f"Envío Contra Entrega: {tarifa_txt}"
     
     else:
         if aplicar_envio:
-            # OBSEQUIO DE ENVIO — medida TEMPORAL (08/10/2026). Se regala la
-            # TARIFA del envio (Nacional $20.000, Medellin $17.000, Area Metro
-            # $22.000) y el seguro se sigue cobrando. En el mensaje la tarifa
-            # sale tachada junto a "¡GRATIS!": el cliente ve el descuento.
-            # No aplica a Contra Entrega (va por su propia rama, arriba) ni a
-            # Internacional (ver TIPOS_ENVIO_OBSEQUIABLES). Que la casilla se
-            # marque sola desde $600.000 en joyas se decide en static/app.js;
-            # aqui solo se respeta lo que llega.
-            # Sin obsequio el texto queda EXACTAMENTE como estaba.
-            regala = bool(obsequiar_envio) and tipo_envio in TIPOS_ENVIO_OBSEQUIABLES
-
-            def tarifa_txt(valor):
-                txt = f"${valor:,}".replace(',', '.')
-                return f"{tachar(txt)} ¡GRATIS!" if regala else txt
-
+            # Con la promocion se descuentan $20.000 de la tarifa (ver
+            # _tarifa_con_descuento). El seguro de Nacional se sigue cobrando.
+            # Sin promocion el texto queda EXACTAMENTE como estaba.
             if tipo_envio == "Local (Medellín)":
-                envio = 0 if regala else 17000
-                detalle_envio = f"Envío Local Medellín: {tarifa_txt(17000)}"
+                envio, tarifa_txt = _tarifa_con_descuento(17000, obsequiar_envio)
+                detalle_envio = f"Envío Local Medellín: {tarifa_txt}"
             elif tipo_envio == "Local (Área Metropolitana)":
-                envio = 0 if regala else 22000
-                detalle_envio = f"Envío Área Metropolitana: {tarifa_txt(22000)}"
+                envio, tarifa_txt = _tarifa_con_descuento(22000, obsequiar_envio)
+                detalle_envio = f"Envío Área Metropolitana: {tarifa_txt}"
             elif tipo_envio == "Nacional":
                 seguro_nal = round(subtotal * 0.006)
-                envio = seguro_nal if regala else 20000 + seguro_nal
+                tarifa, tarifa_txt = _tarifa_con_descuento(20000, obsequiar_envio)
+                envio = tarifa + seguro_nal
                 # --- CAMBIO: Se agregó "0.6%" al texto del seguro Nacional
-                detalle_envio = f"Envío Nacional {tarifa_txt(20000)} + Seguro 0.6% ({seguro_nal:,}): ${envio:,}".replace(',', '.')
+                detalle_envio = f"Envío Nacional {tarifa_txt} + Seguro 0.6% ({seguro_nal:,}): ${envio:,}".replace(',', '.')
             elif tipo_envio == "Internacional":
-                envio = limpiar_numero(envio_manual)
-                detalle_envio = f"Envío Internacional: ${envio:,}".replace(',', '.')
+                envio, tarifa_txt = _tarifa_con_descuento(limpiar_numero(envio_manual), obsequiar_envio)
+                detalle_envio = f"Envío Internacional: {tarifa_txt}"
 
     # 3. Calcular Total Base
     total_base = subtotal + envio

@@ -4,14 +4,15 @@
 # la joya (tabla de la transportadora) y tiene un tope por encima del cual ese
 # medio de pago no se puede usar:
 #
-#     de 0 a 500.000        30.000 + seguro
-#     500.000 a 800.000     40.000 + seguro
-#     800.000 a 1.000.000   50.000 + seguro
-#     1.000.000 a 1.200.000 70.000 + seguro
-#     1.200.000 a 1.500.000 90.000 + seguro
+#     de 0 a 500.000        30.000
+#     500.000 a 800.000     40.000
+#     800.000 a 1.000.000   50.000
+#     1.000.000 a 1.200.000 70.000
+#     1.200.000 a 1.500.000 90.000
 #     más de 1.500.000      no permitido
 #
-# El seguro es el 1,2% del subtotal en todos los tramos.
+# Desde el 08/10/2026 Contra Entrega ya NO cobra el seguro del 1,2% (antes se
+# sumaba a cada tramo); la logica anterior quedo documentada en el codigo.
 # Uso: python tools/test_retail.py
 import os
 import re
@@ -79,12 +80,16 @@ r_90 = cotizar(1250000)
 chk("$90.000" in (envio_de(r_90) or ""),
     "1.250.000 cobra 90.000 y no 70.000 (tramo que faltaba)")
 
-# El seguro es 1,2% del subtotal, y el envío es base + seguro
+# Sin seguro: el envio es solo la tarifa del tramo (antes 90.000 + 1,2%)
 r = cotizar(1250000)
-chk("15.000" in (envio_de(r) or ""), "Seguro = 1,2% de 1.250.000 = 15.000")
-chk("$105.000" in (envio_de(r) or ""), "Envío = 90.000 + 15.000 = 105.000")
-chk(total_de(r) == 1250000 + 105000,
-    f"Total neto = subtotal + envío = 1.355.000 -> {total_de(r)}")
+chk("Seguro" not in (envio_de(r) or ""), "Contra Entrega ya no cobra seguro")
+chk(envio_de(r) == "🚚 Envío Contra Entrega: $90.000",
+    f"Linea contra entrega: solo la tarifa | {envio_de(r)}")
+chk(total_de(r) == 1250000 + 90000,
+    f"Total neto = subtotal + tarifa = 1.340.000 -> {total_de(r)}")
+for valor, base in TRAMOS:
+    chk(total_de(cotizar(valor)) == valor + base,
+        f"{valor:>9,} -> total = joyas + {base:,} sin seguro".replace(",", "."))
 
 # =====================================================
 # Tope: por encima de 1.500.000 el medio de pago no aplica
@@ -183,10 +188,12 @@ chk(len(set(cuerpos.values())) == 1,
     "Salvo el titulo, los 4 medios producen un mensaje identico")
 
 # =====================================================
-# Obsequio de envio — medida TEMPORAL (08/10/2026)
-# Se regala la TARIFA del envio, el seguro se cobra igual, y en el mensaje la
-# tarifa sale tachada con "¡GRATIS!". No aplica a Contra Entrega ni a
-# Internacional. El marcado automatico desde $600.000 vive en el front.
+# Promocion de envio — medida TEMPORAL (campana de ~1 mes desde el 08/10/2026)
+# Con la casilla se descuentan $20.000 de la tarifa del envio, sea cual sea,
+# Contra Entrega incluido. Si la tarifa es menor queda gratis (nunca negativa).
+# El seguro de Nacional se sigue cobrando. En el mensaje la tarifa sale
+# tachada junto a lo que paga el cliente. El marcado automatico desde
+# $600.000 vive en el front.
 # =====================================================
 TACHA = chr(0x336)          # raya Unicode que se pone despues de cada caracter
 
@@ -204,62 +211,80 @@ def regalo(valor, tipo, medio="Transferencia", **kw):
                    obsequiar_envio=True, **kw)
 
 
-# Nacional: se regalan los $20.000 y se cobra el 0,6% de seguro
+# El ejemplo del pedido: 2 x 410.000 = 820.000 contra entrega (tarifa 50.000)
+r = cotizar(820000, medio_pago="Contra Entrega", obsequiar_envio=True)
+chk(envio_de(r) == "🚚 Envío Contra Entrega: " + tachado("$50.000") + " $30.000 ¡Te regalamos $20.000!",
+    f"Contra entrega 820.000: 50.000 tachado, paga 30.000 | {sin_tachar(envio_de(r))}")
+chk(total_de(r) == 850000, f"Total = 820.000 + 30.000 = 850.000 -> {total_de(r)}")
+
+# Contra Entrega en cada tramo desde el minimo de la promocion
+for valor, tarifa in ((600000, 40000), (900000, 50000), (1100000, 70000), (1500000, 90000)):
+    r = cotizar(valor, medio_pago="Contra Entrega", obsequiar_envio=True)
+    chk(total_de(r) == valor + tarifa - 20000,
+        f"Contra entrega {valor:,}: tarifa {tarifa:,} - 20.000".replace(",", ".") +
+        f" -> {total_de(r)}")
+
+# Nacional: tarifa de 20.000 -> gratis, el 0,6% de seguro se sigue cobrando
 r = regalo(1000000, "Nacional")
-chk(total_de(r) == 1006000,
-    f"Nacional obsequiado: 1.000.000 + solo el seguro 6.000 = 1.006.000 -> {total_de(r)}")
 linea = envio_de(r) or ""
+chk(total_de(r) == 1006000,
+    f"Nacional: 1.000.000 + solo el seguro 6.000 = 1.006.000 -> {total_de(r)}")
 chk(sin_tachar(linea) == "🚚 Envío Nacional $20.000 ¡GRATIS! + Seguro 0.6% (6.000): $6.000",
-    f"Linea nacional: tarifa + GRATIS + seguro cobrado | {sin_tachar(linea)}")
+    f"Linea nacional: tarifa tachada + GRATIS + seguro cobrado | {sin_tachar(linea)}")
 chk(tachado("$20.000") in linea, "Lo tachado son exactamente los $20.000, caracter por caracter")
 chk(TACHA not in linea.split("Seguro")[1], "El seguro NO se tacha: se sigue cobrando")
-chk("Seguro 0.6% (6.000): $6.000" in linea, "El envio a pagar queda en solo el seguro")
 
-# Locales: se regala toda la tarifa y no hay seguro
+# Medellin: tarifa de 17.000, menor que el descuento -> gratis, nunca negativo
 r = regalo(1000000, "Local (Medellín)")
-chk(total_de(r) == 1000000, f"Medellin obsequiado no suma envio -> {total_de(r)}")
+chk(total_de(r) == 1000000, f"Medellin: el descuento cubre los 17.000 -> {total_de(r)}")
 chk(envio_de(r) == "🚚 Envío Local Medellín: " + tachado("$17.000") + " ¡GRATIS!",
-    f"Linea Medellin con los 17.000 tachados | {sin_tachar(envio_de(r))}")
-r = regalo(1000000, "Local (Área Metropolitana)")
-chk(total_de(r) == 1000000, f"Area Metropolitana obsequiada no suma envio -> {total_de(r)}")
-chk(envio_de(r) == "🚚 Envío Área Metropolitana: " + tachado("$22.000") + " ¡GRATIS!",
-    f"Linea Area Metropolitana con los 22.000 tachados | {sin_tachar(envio_de(r))}")
+    f"Linea Medellin | {sin_tachar(envio_de(r))}")
 
-# El descuento es exactamente la tarifa: misma cotizacion sin y con obsequio
-for tipo, tarifa in (("Nacional", 20000), ("Local (Medellín)", 17000),
-                     ("Local (Área Metropolitana)", 22000)):
-    sin = cotizar(800000, medio_pago="Transferencia", aplicar_envio=True, tipo_envio=tipo)
-    con = regalo(800000, tipo)
-    chk(total_de(sin) - total_de(con) == tarifa,
-        f"{tipo}: el obsequio descuenta exactamente {tarifa:,}".replace(",", ".") +
+# Area Metropolitana: 22.000 - 20.000 = paga 2.000
+r = regalo(1000000, "Local (Área Metropolitana)")
+chk(total_de(r) == 1002000, f"Area Metropolitana: paga 2.000 -> {total_de(r)}")
+chk(envio_de(r) == "🚚 Envío Área Metropolitana: " + tachado("$22.000") + " $2.000 ¡Te regalamos $20.000!",
+    f"Linea Area Metropolitana | {sin_tachar(envio_de(r))}")
+
+# Internacional: tambien entra; se descuentan 20.000 del valor manual
+r = regalo(1000000, "Internacional", envio_manual="150.000")
+chk(total_de(r) == 1130000, f"Internacional: 150.000 - 20.000 = 130.000 -> {total_de(r)}")
+chk(envio_de(r) == "🚚 Envío Internacional: " + tachado("$150.000") + " $130.000 ¡Te regalamos $20.000!",
+    f"Linea internacional | {sin_tachar(envio_de(r))}")
+r = regalo(1000000, "Internacional", envio_manual="")
+chk(total_de(r) == 1000000 and TACHA not in (envio_de(r) or ""),
+    "Internacional sin valor: no hay nada que descontar ni tachar")
+
+# El descuento nunca pasa de 20.000 y nunca supera la tarifa
+for tipo, tarifa, manual in (("Nacional", 20000, ""), ("Local (Medellín)", 17000, ""),
+                             ("Local (Área Metropolitana)", 22000, ""),
+                             ("Internacional", 150000, "150.000")):
+    sin = cotizar(800000, medio_pago="Transferencia", aplicar_envio=True,
+                  tipo_envio=tipo, envio_manual=manual)
+    con = regalo(800000, tipo, envio_manual=manual)
+    esperado = min(20000, tarifa)
+    chk(total_de(sin) - total_de(con) == esperado,
+        f"{tipo}: descuenta {esperado:,}".replace(",", ".") +
         f" ({total_de(sin)} -> {total_de(con)})")
 
-# Funciona igual con todos los medios de pago que no son Contra Entrega
+# Funciona igual con todos los medios de pago
 for medio in ("Transferencia", "Addi", "Sistecredito", "T. Crédito/Débito"):
     r = regalo(700000, "Nacional", medio=medio)
     chk(total_de(r) == 700000 + round(700000 * 0.006),
-        f"{medio} con obsequio nacional = 700.000 + seguro -> {total_de(r)}")
+        f"{medio} con promocion nacional = 700.000 + seguro -> {total_de(r)}")
 
-# Contra Entrega: el obsequio se ignora (tiene su propia tarifa de transportadora)
-sin = cotizar(1000000, medio_pago="Contra Entrega")
-con = cotizar(1000000, medio_pago="Contra Entrega", obsequiar_envio=True)
-chk(sin == con, "Contra Entrega ignora el obsequio: misma cotizacion con o sin casilla")
-
-# Internacional: queda fuera, se cobra el valor manual completo
-r = regalo(1000000, "Internacional", envio_manual="150.000")
-chk(total_de(r) == 1150000 and TACHA not in (envio_de(r) or ""),
-    f"Internacional ignora el obsequio y cobra los 150.000 -> {total_de(r)}")
-
-# Sin "Agregar envio" no hay nada que regalar
+# Sin "Agregar envio" no hay nada que descontar (fuera de Contra Entrega)
 r = cotizar(1000000, medio_pago="Transferencia", aplicar_envio=False,
             tipo_envio="Nacional", obsequiar_envio=True)
 chk(total_de(r) == 1000000 and envio_de(r) is None,
     "Sin envio agregado, la casilla no cambia nada ni agrega linea")
 
-# El valor por defecto es NO obsequiar: lo de siempre queda identico
+# Sin la casilla todo queda como estaba
 chk(envio_de(cotizar(1000000, medio_pago="Transferencia", aplicar_envio=True,
                      tipo_envio="Nacional")) == "🚚 Envío Nacional $20.000 + Seguro 0.6% (6.000): $26.000",
-    "Sin obsequio la linea nacional no cambia ni un caracter")
+    "Sin promocion la linea nacional no cambia ni un caracter")
+chk(envio_de(cotizar(820000, medio_pago="Contra Entrega")) == "🚚 Envío Contra Entrega: $50.000",
+    "Sin promocion, contra entrega cobra la tarifa completa (sin seguro)")
 
 # =====================================================
 # Casos que deben rechazarse con mensaje, no reventar

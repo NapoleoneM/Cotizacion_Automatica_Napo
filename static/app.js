@@ -113,15 +113,12 @@ $("#ret-pago").onchange = () => {
 };
 $("#calc-retail").onclick = calcularRetail;
 
-// ---------- Obsequio de envío — medida TEMPORAL (08/10/2026) ----------
+// ---------- Obsequio de envío — medida TEMPORAL (campaña de ~1 mes, 08/10/2026) ----------
 // Desde este subtotal en joyas la casilla "Obsequiar envío" se marca sola.
 // Para terminar la promoción basta con UMBRAL_OBSEQUIO = Infinity: la casilla
-// sigue disponible para usarla a mano. Qué se regala lo decide el servidor
-// (core/cotizacion_logic.py): la tarifa del envío, nunca el seguro.
+// sigue disponible para usarla a mano. Cuánto se descuenta lo decide el
+// servidor (core/cotizacion_logic.py): $20.000 de la tarifa del envío.
 const UMBRAL_OBSEQUIO = 600000;
-// Mismos tipos que TIPOS_ENVIO_OBSEQUIABLES en el servidor. Internacional queda
-// fuera: su valor es manual y puede ser alto.
-const ENVIOS_OBSEQUIABLES = ["Local (Medellín)", "Local (Área Metropolitana)", "Nacional"];
 // De qué lado del umbral quedó el total la última vez (true = en o sobre
 // $600.000; null = casilla no disponible). Sirve para detectar los CRUCES.
 let ladoObsequio = null;
@@ -139,9 +136,10 @@ function subtotalRetail() {
 // mano y se respeta, hasta que el total vuelva a cruzar.
 function sincronizarObsequio() {
   const chk = $("#ret-obsequio-chk");
-  const disponible = $("#ret-envio-chk").checked
-    && $("#ret-pago").value !== "Contra Entrega"
-    && ENVIOS_OBSEQUIABLES.includes($("#ret-envio-tipo").value);
+  // Contra Entrega siempre lleva envío (por eso "Agregar envío" se bloquea con
+  // ese medio); en los demás, hace falta haber agregado el envío.
+  const disponible = $("#ret-pago").value === "Contra Entrega"
+    || $("#ret-envio-chk").checked;
   chk.disabled = !disponible;
   if (!disponible) { chk.checked = false; ladoObsequio = null; return; }
   const lado = subtotalRetail() >= UMBRAL_OBSEQUIO;
