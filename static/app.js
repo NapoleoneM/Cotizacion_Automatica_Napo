@@ -78,7 +78,10 @@ function debounce(fn) { let t; return () => { clearTimeout(t); t = setTimeout(fn
 // RETAIL
 // =====================================================
 const filasRetail = [];
-const calcRetailDeb = debounce(calcularRetail);
+const _calcRetailDeb = debounce(calcularRetail);
+// La casilla del obsequio reacciona al instante (cantidad, valor, envío); la
+// cotización se recalcula con la pausa normal mientras se escribe.
+const calcRetailDeb = () => { sincronizarObsequio(); _calcRetailDeb(); };
 
 function nuevaFilaRetail() {
   const div = document.createElement("div"); div.className = "fila";
@@ -119,9 +122,9 @@ const UMBRAL_OBSEQUIO = 600000;
 // Mismos tipos que TIPOS_ENVIO_OBSEQUIABLES en el servidor. Internacional queda
 // fuera: su valor es manual y puede ser alto.
 const ENVIOS_OBSEQUIABLES = ["Local (Medellín)", "Local (Área Metropolitana)", "Nacional"];
-// null = la casilla se decide sola por el umbral; true/false = el asesor la
-// tocó y manda él, hasta que empiece una cotización nueva (joyas vacías).
-let obsequioManual = null;
+// De qué lado del umbral quedó el total la última vez (true = en o sobre
+// $600.000; null = casilla no disponible). Sirve para detectar los CRUCES.
+let ladoObsequio = null;
 
 function subtotalRetail() {
   return filasRetail.reduce((suma, f) => {
@@ -131,22 +134,23 @@ function subtotalRetail() {
   }, 0);
 }
 
+// La casilla sigue al total: cada vez que CRUZA el umbral se marca (al subir)
+// o se desmarca (al bajar). Entre un cruce y otro el asesor puede cambiarla a
+// mano y se respeta, hasta que el total vuelva a cruzar.
 function sincronizarObsequio() {
   const chk = $("#ret-obsequio-chk");
-  if (filasRetail.every(f => f.vacia())) obsequioManual = null;   // cotización nueva
   const disponible = $("#ret-envio-chk").checked
     && $("#ret-pago").value !== "Contra Entrega"
     && ENVIOS_OBSEQUIABLES.includes($("#ret-envio-tipo").value);
   chk.disabled = !disponible;
-  if (!disponible) { chk.checked = false; return; }
-  chk.checked = obsequioManual !== null ? obsequioManual
-                                        : subtotalRetail() >= UMBRAL_OBSEQUIO;
+  if (!disponible) { chk.checked = false; ladoObsequio = null; return; }
+  const lado = subtotalRetail() >= UMBRAL_OBSEQUIO;
+  if (lado !== ladoObsequio) chk.checked = lado;
+  ladoObsequio = lado;
 }
 
-$("#ret-obsequio-chk").onchange = e => {
-  obsequioManual = e.target.checked;
-  calcRetailDeb();
-};
+// El cambio manual queda guardado en la propia casilla
+$("#ret-obsequio-chk").onchange = calcRetailDeb;
 
 function toggleEnvioRet() {
   const on = $("#ret-envio-chk").checked;
