@@ -213,7 +213,7 @@ def regalo(valor, tipo, medio="Transferencia", **kw):
 
 # El ejemplo del pedido: 2 x 410.000 = 820.000 contra entrega (tarifa 50.000)
 r = cotizar(820000, medio_pago="Contra Entrega", obsequiar_envio=True)
-chk(envio_de(r) == "🚚 Envío Contra Entrega: " + tachado("$50.000") + " $30.000 ¡Te regalamos $20.000!",
+chk(envio_de(r) == "🚚 Envío Contra Entrega: " + tachado("$50.000") + " $30.000 (Obsequio: dto. $20.000)",
     f"Contra entrega 820.000: 50.000 tachado, paga 30.000 | {sin_tachar(envio_de(r))}")
 chk(total_de(r) == 850000, f"Total = 820.000 + 30.000 = 850.000 -> {total_de(r)}")
 
@@ -243,13 +243,13 @@ chk(envio_de(r) == "🚚 Envío Local Medellín: " + tachado("$17.000") + " ¡GR
 # Area Metropolitana: 22.000 - 20.000 = paga 2.000
 r = regalo(1000000, "Local (Área Metropolitana)")
 chk(total_de(r) == 1002000, f"Area Metropolitana: paga 2.000 -> {total_de(r)}")
-chk(envio_de(r) == "🚚 Envío Área Metropolitana: " + tachado("$22.000") + " $2.000 ¡Te regalamos $20.000!",
+chk(envio_de(r) == "🚚 Envío Área Metropolitana: " + tachado("$22.000") + " $2.000 (Obsequio: dto. $20.000)",
     f"Linea Area Metropolitana | {sin_tachar(envio_de(r))}")
 
 # Internacional: tambien entra; se descuentan 20.000 del valor manual
 r = regalo(1000000, "Internacional", envio_manual="150.000")
 chk(total_de(r) == 1130000, f"Internacional: 150.000 - 20.000 = 130.000 -> {total_de(r)}")
-chk(envio_de(r) == "🚚 Envío Internacional: " + tachado("$150.000") + " $130.000 ¡Te regalamos $20.000!",
+chk(envio_de(r) == "🚚 Envío Internacional: " + tachado("$150.000") + " $130.000 (Obsequio: dto. $20.000)",
     f"Linea internacional | {sin_tachar(envio_de(r))}")
 r = regalo(1000000, "Internacional", envio_manual="")
 chk(total_de(r) == 1000000 and TACHA not in (envio_de(r) or ""),

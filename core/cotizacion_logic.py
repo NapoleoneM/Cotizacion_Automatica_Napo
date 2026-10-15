@@ -36,8 +36,12 @@ def _tarifa_con_descuento(tarifa, aplicar):
 
     Sin descuento el texto es el de siempre ("$17.000"). Con descuento la
     tarifa sale tachada y al lado lo que paga el cliente, para que vea el
-    regalo: "[$50.000 tachado] $30.000 ¡Te regalamos $20.000!", o la tarifa
-    tachada con "¡GRATIS!" si el descuento la cubre toda.
+    descuento: "[$50.000 tachado] $30.000 (Obsequio: dto. $20.000)", o la
+    tarifa tachada con "¡GRATIS!" si el descuento la cubre toda.
+
+    Texto neutral a proposito: "¡Te regalamos $20.000!" (version del 08/10)
+    se cambio el 15/10 porque al cliente le sonaba a favor, cuando la compra
+    fue decision suya.
     """
     normal = f"${tarifa:,}".replace(',', '.')
     descuento = min(DESCUENTO_ENVIO, tarifa) if aplicar else 0
@@ -47,7 +51,7 @@ def _tarifa_con_descuento(tarifa, aplicar):
     if cobrado == 0:
         return 0, f"{tachar(normal)} ¡GRATIS!"
     regalo = f"${descuento:,}".replace(',', '.')
-    return cobrado, f"{tachar(normal)} ${cobrado:,} ¡Te regalamos {regalo}!".replace(',', '.')
+    return cobrado, f"{tachar(normal)} ${cobrado:,} (Obsequio: dto. {regalo})".replace(',', '.')
 
 
 def calcular_cotizacion(joyas, medio_pago, aplicar_envio, tipo_envio, envio_manual,
