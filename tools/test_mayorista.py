@@ -124,8 +124,7 @@ chk(_mapear_tarifas(rejilla(HOY), bloque="NO_EXISTE") == {},
 PRECIOS = {
     "Nacional": {"Corriente": 435000, "Especial": 445000, "Fabricación": 455000},
     "Italiano": {f"Recargo +{n}": 555000 + n * 5000 for n in range(1, 6)},
-    "Bolas": {"Lisa contado": 430000, "Lisa crédito": 495000,
-              "Diamantada contado": 430000, "Diamantada crédito": 495000},
+    "Bolas": {"Lisa contado": 430000, "Diamantada contado": 430000},
 }
 
 
@@ -141,11 +140,79 @@ texto = r.get("texto", "")
 chk("Bola diamantada" in texto, "La joya aparece en la cotizacion (ya no se omite)")
 chk("860.000" in texto, f"2 gr x 430.000 = 860.000 en el texto | {texto[:120]!r}")
 
-# Con tarifa en 0 la joya se omite: por eso el aviso de faltantes es critico
+# =====================================================
+# Una joya sin tarifa ya no se omite en silencio: la cotizacion avisa
+# (antes salian cotizaciones vacias o incompletas cuando cambiaba la tabla)
+# =====================================================
 r0 = calcular_cotizacion_mayorista([joya("Diamantada contado")], [],
                                    {"Bolas": {"Diamantada contado": 0}}, False, "", "")
-chk("Bola diamantada" not in r0.get("texto", ""),
-    "Con tarifa en 0 la joya SI se omite (motivo del aviso de tarifas faltantes)")
+chk("error" in r0 and "texto" not in r0,
+    "Con tarifa en 0 no se arma la cotizacion: se devuelve un aviso")
+chk("Bola diamantada" in r0.get("error", "") and "Bolas → Diamantada contado" in r0.get("error", ""),
+    f"El aviso dice que joya y que tarifa faltan | {r0.get('error')}")
+
+# Un front viejo en cache que todavia mande "Lisa crédito" tampoco se pierde en silencio
+r_vieja = calcular_cotizacion_mayorista([joya("Lisa crédito")], [], PRECIOS, False, "", "")
+chk("error" in r_vieja and "Lisa crédito" in r_vieja["error"],
+    f"Un subtipo que ya no existe avisa en vez de omitirse | {r_vieja.get('error')}")
+
+# Si una de varias joyas no tiene tarifa, no sale una cotizacion a medias
+r_mix = calcular_cotizacion_mayorista(
+    [joya("Lisa contado"), {**joya("Corriente", tipo="Nacional"), "nombre": "Cadena"},
+     {**joya("Lisa crédito"), "nombre": "Bola rara"}], [], PRECIOS, False, "", "")
+chk("error" in r_mix and "Bola rara" in r_mix["error"] and "Cadena" not in r_mix["error"],
+    f"Con una sola joya sin tarifa se avisa solo esa | {r_mix.get('error')}")
+
+# =====================================================
+# Tabla v.28.10.26: titulo con version y una sola columna de precio
+# =====================================================
+V2810 = [
+    ("NACIONAL", "", ""),
+    ("Corriente", " $410.000", ""),
+    ("Especial", " $420.000", ""),
+    ("Fabricaciones", " $430.000", ""),
+    ("ITALIANO", "", ""),
+    ("Recargo +1", " $500.000", ""),
+    ("Recargo +5", " $520.000", ""),
+    ("BOLAS", "", ""),
+    ("Lisas | Diam.", " $410.000", ""),
+    ("14K ITALIANO", "", ""),
+    ("Único", " $420.000", ""),
+]
+g = rejilla(V2810)
+g[27][15] = "MAYORISTAS - v.28.10.26"           # el titulo ahora trae la version
+g[28][16] = "Contado No Incluye IVA"            # y una sola columna de precio
+g[28][17] = ""
+m4 = _mapear_tarifas(g)
+chk(_tarifa(m4, "NACIONAL", "CORRIENTE") == 410000,
+    f"Encuentra 'MAYORISTAS - v.28.10.26' aunque traiga version -> {_tarifa(m4, 'NACIONAL', 'CORRIENTE')}")
+chk(_tarifa(m4, "BOLAS", "DIAM") == 410000, "Bolas sale de la unica columna de contado")
+chk(_tarifa(m4, "BOLAS", "LISA", credito=True) == 0,
+    "Sin columna de credito, el credito queda en 0: no se inventa un precio")
+
+# El titulo debe EMPEZAR por el nombre del bloque: otro texto no lo engana
+g2 = rejilla(V2810)
+g2[27][15] = "PRECIOS MAYORISTAS"
+chk(_mapear_tarifas(g2) == {}, "'PRECIOS MAYORISTAS' no se toma como el bloque MAYORISTAS")
+
+# Solo cuentan las columnas pegadas a 'Tipo': otra tabla en la misma fila no se mezcla
+g3 = rejilla(V2810)
+g3[27][15] = "MAYORISTAS - v.28.10.26"
+g3[28][16] = "Contado No Incluye IVA"
+g3[28][17] = ""
+g3[28][19] = "Otra tabla"
+m5 = _mapear_tarifas(g3)
+chk(_tarifa(m5, "NACIONAL", "CORRIENTE") == 410000 and _tarifa(m5, "NACIONAL", "CORRIENTE", credito=True) == 0,
+    "Un encabezado de otra tabla mas a la derecha no se toma como columna de credito")
+
+# Cotizacion completa con la tabla nueva
+precios_v2810 = {
+    "Nacional": {"Corriente": 410000, "Especial": 420000, "Fabricación": 430000},
+    "Italiano": {f"Recargo +{n}": 495000 + n * 5000 for n in range(1, 6)},
+    "Bolas": {"Lisa contado": 410000, "Diamantada contado": 410000},
+}
+r = calcular_cotizacion_mayorista([joya("Diamantada contado")], [], precios_v2810, False, "", "")
+chk("820.000" in r.get("texto", ""), f"2 gr x 410.000 = 820.000 con la tabla nueva | {r.get('error', '')}")
 
 print("\nRESULTADO:", "[X] HAY FALLOS" if fallos else "[OK] TODO CORRECTO")
 sys.exit(1 if fallos else 0)

@@ -202,7 +202,8 @@ if (typeof ligarNombre !== "undefined") ligarNombre;  // no-op guard
 const SUBTIPOS = {
   "Nacional": ["Corriente", "Especial", "Fabricación"],
   "Italiano": ["Recargo +1", "Recargo +2", "Recargo +3", "Recargo +4", "Recargo +5"],
-  "Bolas": ["Lisa contado", "Lisa crédito", "Diamantada contado", "Diamantada crédito"],
+  // Sin "crédito" desde la tabla v.28.10.26: Mayoristas ya no trae esa columna
+  "Bolas": ["Lisa contado", "Diamantada contado"],
 };
 const filasMay = [], filasOtros = [];
 const calcMayDeb = debounce(calcularMayorista);

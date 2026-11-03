@@ -67,6 +67,15 @@ def _mapear_tarifas(filas, bloque="MAYORISTAS"):
     eso se prueban TODOS los candidatos y se usa el primero que tenga un 'Tipo'
     debajo en su misma columna: ese es el bloque de verdad.
 
+    El titulo puede traer la version de la tabla detras ("MAYORISTAS -
+    v.28.10.26", desde el 28/10/2026): basta con que EMPIECE por el nombre del
+    bloque. Antes se exigia el texto exacto y, con el sufijo, no se encontraba
+    el bloque y las 12 tarifas quedaban en 0.
+
+    Las columnas de precio son las que van PEGADAS a la derecha de 'Tipo' (la
+    primera, contado; la segunda, si existe, credito). Si no hay segunda
+    columna, el credito queda en 0: no se inventa un precio que la hoja no da.
+
     Desde esa fila hacia abajo, una fila con rotulo y sin numeros es un
     encabezado de seccion; una con numeros es una tarifa de la seccion vigente.
     """
@@ -74,7 +83,7 @@ def _mapear_tarifas(filas, bloque="MAYORISTAS"):
         (i, j)
         for i, fila in enumerate(filas)
         for j, celda in enumerate(fila)
-        if _norm(celda) == bloque
+        if re.match(rf"{re.escape(bloque)}\b", _norm(celda))
     ]
 
     for fila_bloque, col_rotulo in candidatos:
@@ -83,11 +92,15 @@ def _mapear_tarifas(filas, bloque="MAYORISTAS"):
             fila = filas[i]
             if col_rotulo >= len(fila) or _norm(fila[col_rotulo]) != "TIPO":
                 continue
-            valores = [k for k in range(col_rotulo + 1, len(fila)) if _norm(fila[k])]
+            valores = []
+            for k in range(col_rotulo + 1, len(fila)):
+                if not _norm(fila[k]):
+                    break                 # fin del encabezado de ESTE bloque
+                valores.append(k)
             if valores:
                 fila_inicio = i + 1
                 col_contado = valores[0]
-                col_credito = valores[1] if len(valores) > 1 else valores[0]
+                col_credito = valores[1] if len(valores) > 1 else None
             break
         if fila_inicio is None:
             continue                  # este rotulo no era el bloque: probar el siguiente
@@ -101,7 +114,8 @@ def _mapear_tarifas(filas, bloque="MAYORISTAS"):
             if not rotulo:
                 continue
             contado = limpiar_numero_mayorista(celda(col_contado))
-            credito = limpiar_numero_mayorista(celda(col_credito))
+            credito = (limpiar_numero_mayorista(celda(col_credito))
+                       if col_credito is not None else 0)
             if contado <= 0 and credito <= 0:
                 seccion = rotulo      # fila sin numeros = encabezado de seccion
                 continue
@@ -161,15 +175,21 @@ def obtener_precios_sheets(ruta_credenciales):
                 f"Recargo +{n}": _tarifa(mapa, "ITALIANO", f"RECARGO +{n}")
                 for n in range(1, 6)
             },
-            # Bolas es el unico que usa las dos columnas. Se aceptan tanto las
-            # filas separadas (Lisa / Diamantada) como la fila unica que las
-            # agrupa: si un rotulo nombra a las dos, sirve para ambas.
+            # Se aceptan tanto las filas separadas (Lisa / Diamantada) como la
+            # fila unica que las agrupa: si un rotulo nombra a las dos, sirve
+            # para ambas.
+            #
+            # Desde la tabla v.28.10.26 el bloque MAYORISTAS solo trae la
+            # columna "Contado No Incluye IVA" (antes: "Contado | F. Electro"),
+            # asi que el 03/11/2026 se quitaron "Lisa crédito" y "Diamantada
+            # crédito" por decision del negocio. Si el CORE vuelve a tener la
+            # segunda columna, basta con reponerlas aqui y en SUBTIPOS de
+            # static/app.js:
+            #     "Lisa crédito": _tarifa(mapa, "BOLAS", "LISA", credito=True),
+            #     "Diamantada crédito": _tarifa(mapa, "BOLAS", "DIAMANTADA", "DIAM", credito=True),
             "Bolas": {
                 "Lisa contado": _tarifa(mapa, "BOLAS", "LISA"),
-                "Lisa crédito": _tarifa(mapa, "BOLAS", "LISA", credito=True),
                 "Diamantada contado": _tarifa(mapa, "BOLAS", "DIAMANTADA", "DIAM"),
-                "Diamantada crédito": _tarifa(mapa, "BOLAS", "DIAMANTADA", "DIAM",
-                                              credito=True),
             },
         }
         # Si una tarifa llega en 0 es porque el Sheet cambió de estructura o la
@@ -199,6 +219,18 @@ def calcular_cotizacion_mayorista(joyas, otros, precios, aplicar_envio, tipo_env
 
     if not joyas_validas and not otros:
         return {"exito": True, "texto": ""}
+
+    # Una joya sin tarifa NO se omite en silencio (asi salian cotizaciones
+    # vacias o incompletas cuando cambiaba la tabla): se avisa cual falta y no
+    # se arma el mensaje, para que nadie envie una cotizacion incompleta.
+    sin_tarifa = []
+    for j in joyas_validas:
+        tarifa = (precios.get(j['tipo']) or {}).get(j['subtipo'], 0)
+        if not tarifa or tarifa <= 0:
+            sin_tarifa.append(f"{j['nombre']} ({j['tipo']} → {j['subtipo']})")
+    if sin_tarifa:
+        return {"error": "Sin tarifa en la tabla de precios para: " + ", ".join(sin_tarifa)
+                         + ". Presione 'Actualizar precios'; si sigue, revise la tabla en Sheets."}
 
     subtotal = 0
     texto = "🦁 *COTIZACIÓN MAYORISTA*\n\n"
