@@ -113,12 +113,19 @@ $("#ret-pago").onchange = () => {
 };
 $("#calc-retail").onclick = calcularRetail;
 
-// ---------- Obsequio de envío — medida TEMPORAL (campaña de ~1 mes, 08/10/2026) ----------
+// ---------- Obsequio de envío — medida TEMPORAL (08/10/2026 → medianoche del 03/11/2026) ----------
 // Desde este subtotal en joyas la casilla "Obsequiar envío" se marca sola.
-// Para terminar la promoción basta con UMBRAL_OBSEQUIO = Infinity: la casilla
-// sigue disponible para usarla a mano. Cuánto se descuenta lo decide el
-// servidor (core/cotizacion_logic.py): $20.000 de la tarifa del envío.
+// Cuánto se descuenta lo decide el servidor (core/cotizacion_logic.py):
+// $20.000 de la tarifa del envío.
 const UMBRAL_OBSEQUIO = 600000;
+// Cierre de la campaña: medianoche del 3 al 4 de noviembre de 2026, hora de
+// Colombia. Debe coincidir con FIN_PROMO_ENVIO en core/cotizacion_logic.py.
+// Quien manda es el servidor (pasada esa hora ignora la casilla aunque llegue
+// marcada); esta fecha solo oculta la casilla a tiempo, incluso en una pestaña
+// que quedó abierta desde antes de medianoche.
+const FIN_PROMO_ENVIO = Date.parse("2026-11-04T00:00:00-05:00");
+let promoCerradaPorServidor = false;
+function promoEnvioActiva() { return !promoCerradaPorServidor && Date.now() < FIN_PROMO_ENVIO; }
 // De qué lado del umbral quedó el total la última vez (true = en o sobre
 // $600.000; null = casilla no disponible). Sirve para detectar los CRUCES.
 let ladoObsequio = null;
@@ -136,6 +143,11 @@ function subtotalRetail() {
 // mano y se respeta, hasta que el total vuelva a cruzar.
 function sincronizarObsequio() {
   const chk = $("#ret-obsequio-chk");
+  if (!promoEnvioActiva()) {          // campaña cerrada: la casilla desaparece
+    chk.checked = false; chk.disabled = true; ladoObsequio = null;
+    chk.closest("label").style.display = "none";
+    return;
+  }
   // Contra Entrega siempre lleva envío (por eso "Agregar envío" se bloquea con
   // ese medio); en los demás, hace falta haber agregado el envío.
   const disponible = $("#ret-pago").value === "Contra Entrega"
@@ -176,6 +188,11 @@ async function calcularRetail() {
   const r = await fetch("/api/retail", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
   const d = await r.json();
   $("#res-retail").textContent = d.error ? "⚠️ " + d.error : d.texto;
+  // El servidor confirma si la campaña sigue; si ya cerró, se oculta la casilla
+  if (d.promo_envio_activa === false && !promoCerradaPorServidor) {
+    promoCerradaPorServidor = true;
+    sincronizarObsequio();
+  }
 }
 if (typeof ligarNombre !== "undefined") ligarNombre;  // no-op guard
 

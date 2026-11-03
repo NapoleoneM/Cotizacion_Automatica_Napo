@@ -1,4 +1,5 @@
 import re
+from datetime import datetime, timedelta, timezone
 
 def limpiar_numero(texto):
     """Elimina $, puntos, comas, espacios y convierte a entero."""
@@ -18,7 +19,8 @@ def tachar(texto):
     return "".join(c + "\u0336" for c in str(texto))
 
 
-# PROMOCION DE ENVIO — medida TEMPORAL: campana de ~1 mes desde el 08/10/2026.
+# PROMOCION DE ENVIO — medida TEMPORAL: del 08/10/2026 hasta la medianoche del
+# 03/11/2026 (ver FIN_PROMO_ENVIO, que la apaga sola).
 # Con la casilla "Obsequiar envio" se descuentan $20.000 de la tarifa del envio
 # que toque, sea cual sea (Contra Entrega e Internacional incluidos). Si la
 # tarifa es menor (Medellin, $17.000) el envio queda gratis: nunca baja de $0.
@@ -29,6 +31,22 @@ def tachar(texto):
 # Area Metropolitana y Nacional. Ese mismo dia paso a esta regla general de
 # $20.000 fijos, con Contra Entrega incluido.
 DESCUENTO_ENVIO = 20000
+
+# Cierre de la campana: medianoche del martes 3 al miercoles 4 de noviembre de
+# 2026, hora de Colombia. Se usa un desfase FIJO de UTC-5 (Colombia no tiene
+# horario de verano) para no depender de la zona horaria del contenedor. Desde
+# ese instante el servidor ignora la casilla aunque llegue marcada: el corte es
+# exacto sin importar cuando se despliegue. Para una campana nueva basta con
+# mover esta fecha (y FIN_PROMO_ENVIO en static/app.js, que solo oculta la
+# casilla en pantalla).
+HORA_COLOMBIA = timezone(timedelta(hours=-5))
+FIN_PROMO_ENVIO = datetime(2026, 11, 4, 0, 0, tzinfo=HORA_COLOMBIA)
+
+
+def promo_envio_activa(ahora=None):
+    """True mientras la campana de envio siga vigente. `ahora` (con zona
+    horaria) permite probar cualquier momento; por defecto, el reloj real."""
+    return (ahora or datetime.now(timezone.utc)) < FIN_PROMO_ENVIO
 
 
 def _tarifa_con_descuento(tarifa, aplicar):
@@ -55,8 +73,11 @@ def _tarifa_con_descuento(tarifa, aplicar):
 
 
 def calcular_cotizacion(joyas, medio_pago, aplicar_envio, tipo_envio, envio_manual,
-                        obsequiar_envio=False):
+                        obsequiar_envio=False, ahora=None):
     """Procesa los datos y retorna el texto formateado o un error."""
+    # Pasado el cierre de la campana la casilla no surte efecto (FIN_PROMO_ENVIO)
+    promo_activa = promo_envio_activa(ahora)
+    obsequiar_envio = bool(obsequiar_envio) and promo_activa
     if not joyas:
         return {"error": "Debe agregar al menos una joya para calcular."}
 
@@ -236,4 +257,5 @@ def calcular_cotizacion(joyas, medio_pago, aplicar_envio, tipo_envio, envio_manu
     texto += f"━━━━━━━━━━━━━━━━━━\n"
     texto += f"*TOTAL NETO: ${total_final:,}*".replace(',', '.')
 
-    return {"exito": True, "texto": texto}
+    # promo_envio_activa le avisa al front que oculte la casilla si ya cerro
+    return {"exito": True, "texto": texto, "promo_envio_activa": promo_activa}

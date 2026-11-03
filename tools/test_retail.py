@@ -20,7 +20,15 @@ import sys
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from core.cotizacion_logic import calcular_cotizacion
+from datetime import datetime, timedelta, timezone
+
+from core.cotizacion_logic import (
+    FIN_PROMO_ENVIO, HORA_COLOMBIA, calcular_cotizacion, promo_envio_activa,
+)
+
+# Las pruebas fijan el momento para no depender del reloj: por defecto, el
+# ultimo segundo de la promocion de envio (que cerro a medianoche del 03/11/2026).
+DURANTE_PROMO = datetime(2026, 11, 3, 23, 59, 59, tzinfo=HORA_COLOMBIA)
 
 fallos = 0
 
@@ -38,7 +46,8 @@ def cotizar(valor, medio_pago="Contra Entrega", **kw):
                                kw.get("aplicar_envio", False),
                                kw.get("tipo_envio", ""),
                                kw.get("envio_manual", ""),
-                               obsequiar_envio=kw.get("obsequiar_envio", False))
+                               obsequiar_envio=kw.get("obsequiar_envio", False),
+                               ahora=kw.get("ahora", DURANTE_PROMO))
 
 
 def envio_de(res):
@@ -285,6 +294,38 @@ chk(envio_de(cotizar(1000000, medio_pago="Transferencia", aplicar_envio=True,
     "Sin promocion la linea nacional no cambia ni un caracter")
 chk(envio_de(cotizar(820000, medio_pago="Contra Entrega")) == "🚚 Envío Contra Entrega: $50.000",
     "Sin promocion, contra entrega cobra la tarifa completa (sin seguro)")
+
+# =====================================================
+# Cierre de la promocion: medianoche del 03 al 04/11/2026, hora Colombia
+# =====================================================
+CIERRE = datetime(2026, 11, 4, 0, 0, tzinfo=HORA_COLOMBIA)
+chk(FIN_PROMO_ENVIO == CIERRE, f"El cierre es la medianoche del 3 al 4 de noviembre: {FIN_PROMO_ENVIO}")
+chk(promo_envio_activa(CIERRE - timedelta(seconds=1)), "11:59:59 pm del 03/11: la promocion sigue")
+chk(not promo_envio_activa(CIERRE), "00:00:00 del 04/11: la promocion ya cerro")
+chk(not promo_envio_activa(datetime(2026, 11, 4, 5, 0, tzinfo=timezone.utc)),
+    "Las 5:00 UTC son la misma medianoche de Colombia: cerrada (no depende de la zona del servidor)")
+chk(promo_envio_activa(datetime(2026, 11, 4, 4, 59, 59, tzinfo=timezone.utc)),
+    "Las 4:59:59 UTC todavia son el 03/11 en Colombia: activa")
+
+# Despues del cierre la casilla no surte efecto aunque llegue marcada
+for medio, extra in (("Contra Entrega", {}),
+                     ("Transferencia", {"aplicar_envio": True, "tipo_envio": "Nacional"}),
+                     ("Addi", {"aplicar_envio": True, "tipo_envio": "Local (Área Metropolitana)"})):
+    marcada = cotizar(820000, medio_pago=medio, obsequiar_envio=True, ahora=CIERRE, **extra)
+    sin_casilla = cotizar(820000, medio_pago=medio, obsequiar_envio=False, ahora=CIERRE, **extra)
+    chk(marcada["texto"] == sin_casilla["texto"] and "Obsequio" not in marcada["texto"]
+        and "GRATIS" not in marcada["texto"],
+        f"{medio}: tras el cierre, con la casilla marcada sale la tarifa completa")
+r = cotizar(820000, medio_pago="Contra Entrega", obsequiar_envio=True, ahora=CIERRE)
+chk(total_de(r) == 870000, f"Contra entrega 820.000 tras el cierre: 50.000 completos -> {total_de(r)}")
+chk("Seguro" not in r["texto"], "Tras el cierre Contra Entrega sigue sin seguro (orden aparte, sigue vigente)")
+chk(r["promo_envio_activa"] is False, "La respuesta avisa al front que la promocion cerro")
+chk(cotizar(820000, medio_pago="Contra Entrega", obsequiar_envio=True)["promo_envio_activa"] is True,
+    "Durante la promocion la respuesta lo indica como activa")
+
+# Sin pasar 'ahora' se usa el reloj real
+chk(promo_envio_activa() == (datetime.now(timezone.utc) < CIERRE),
+    "Sin fecha explicita se decide con la hora actual")
 
 # =====================================================
 # Casos que deben rechazarse con mensaje, no reventar
