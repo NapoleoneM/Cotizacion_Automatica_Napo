@@ -461,6 +461,17 @@ async function calcularTienda() {
 let tablaCargada = null;
 $("#actualizar-tabla").onclick = cargarTabla;
 
+// Si cambia el ancho del marco (ventana, panel de turnos, abrir la pestaña),
+// se vuelve a acomodar la tabla. Solo se reacciona al ANCHO: el alto lo pone
+// la propia tabla y reaccionar a él haría un ciclo.
+let anchoMarcoTabla = 0;
+new ResizeObserver(entradas => {
+  const w = Math.round(entradas[0].contentRect.width);
+  if (w === anchoMarcoTabla) return;
+  anchoMarcoTabla = w;
+  if (tablaCargada) requestAnimationFrame(() => dibujarTabla(tablaCargada));
+}).observe($(".marco-tabla"));
+
 async function cargarTabla() {
   $("#estado-tabla").textContent = "⏳ Descargando tabla…";
   const d = await (await fetch("/api/tabla")).json();
@@ -497,25 +508,67 @@ function ajustarTexto(ctx, c, fuente, ancho, alto) {
   }
 }
 
+// La tabla se ACOMODA al ancho disponible en vez de dibujarse con las
+// posiciones fijas del servidor. Antes CLIENTE y DÓLAR iban lado a lado (casi
+// 1.500 px) dentro de una columna de ~680 px, y había que moverse con dos barras.
+// Ahora los bloques van en filas, en el orden en que llegan, saltando de fila
+// cuando el siguiente no cabe; y todo se escala para que el bloque más ancho
+// ocupe el ancho del marco. La página se recorre con el desplazamiento normal.
+const MARGEN_TABLA = 8, SEPARACION_TABLA = 24;
+// Por debajo de esta escala la letra deja de leerse: en pantallas muy angostas
+// (celular) se prefiere una barra horizontal a una tabla ilegible.
+const ESCALA_MIN_TABLA = 0.75;
+
+function acomodarBloques(bloques, anchoDisponible) {
+  const tam = bloques.map(b => ({
+    w: b.col_px.reduce((a, x) => a + x, 0),
+    h: b.row_px.reduce((a, x) => a + x, 0),
+  }));
+  const anchoBloqueMax = Math.max(...tam.map(t => t.w));
+  const escala = Math.max(ESCALA_MIN_TABLA,
+    Math.min(1, anchoDisponible / (anchoBloqueMax + 2 * MARGEN_TABLA)));
+  const anchoFila = Math.max(anchoBloqueMax, anchoDisponible / escala - 2 * MARGEN_TABLA);
+
+  let x = 0, y = 0, altoFila = 0, anchoUsado = 0;
+  const pos = tam.map(t => {
+    if (x > 0 && x + t.w > anchoFila) {       // no cabe: pasa a la fila siguiente
+      x = 0; y += altoFila + SEPARACION_TABLA; altoFila = 0;
+    }
+    const p = { x0: MARGEN_TABLA + x, y0: MARGEN_TABLA + y };
+    anchoUsado = Math.max(anchoUsado, x + t.w);
+    x += t.w + SEPARACION_TABLA; altoFila = Math.max(altoFila, t.h);
+    return p;
+  });
+  return {
+    pos, escala,
+    ancho: anchoUsado + 2 * MARGEN_TABLA,
+    alto: y + altoFila + 2 * MARGEN_TABLA,
+  };
+}
+
 function dibujarTabla(bloques) {
+  const marco = $(".marco-tabla");
+  const disponible = marco.clientWidth
+    - parseFloat(getComputedStyle(marco).paddingLeft) - parseFloat(getComputedStyle(marco).paddingRight);
+  if (disponible <= 0) return;                  // pestaña oculta: se dibuja al mostrarse
   const oscuro = document.documentElement.dataset.tema === "dark";
   const cv = $("#canvas-tabla"), ctx = cv.getContext("2d");
   const dpr = window.devicePixelRatio || 1;
-  let anchoMax = 0, altoMax = 0;
-  bloques.forEach(b => {
-    const w = b.col_px.reduce((a, x) => a + x, 0), h = b.row_px.reduce((a, x) => a + x, 0);
-    anchoMax = Math.max(anchoMax, b.x0 + w); altoMax = Math.max(altoMax, b.y0 + h);
-  });
-  cv.width = (anchoMax + 8) * dpr; cv.height = (altoMax + 8) * dpr;
-  cv.style.width = (anchoMax + 8) + "px"; cv.style.height = (altoMax + 8) + "px";
-  ctx.scale(dpr, dpr);
+  const { pos, escala, ancho, alto } = acomodarBloques(bloques, disponible);
+  const anchoCss = Math.floor(ancho * escala), altoCss = Math.ceil(alto * escala);
+  cv.width = Math.round(anchoCss * dpr); cv.height = Math.round(altoCss * dpr);
+  cv.style.width = anchoCss + "px"; cv.style.height = altoCss + "px";
+  // Todo se dibuja en "px de la tabla" y el escalado lo hace el lienzo: la
+  // letra y las líneas salen nítidas a cualquier tamaño.
+  ctx.setTransform(dpr * escala, 0, 0, dpr * escala, 0, 0);
   ctx.fillStyle = oscuro ? "#232323" : "#FFFFFF";
-  ctx.fillRect(0, 0, anchoMax + 8, altoMax + 8);
+  ctx.fillRect(0, 0, ancho, alto);
   ctx.textBaseline = "middle";
 
   const fuente = getComputedStyle(document.body).fontFamily;
 
-  bloques.forEach(b => {
+  bloques.forEach((bloque, i) => {
+    const b = { ...bloque, ...pos[i] };
     const xs = [b.x0]; b.col_px.forEach(w => xs.push(xs[xs.length - 1] + w));
     const ys = [b.y0]; b.row_px.forEach(h => ys.push(ys[ys.length - 1] + h));
     const nc = b.col_px.length, nr = b.row_px.length;
