@@ -52,6 +52,15 @@ _precios = {"datos": None, "hora": None, "tarifas_faltantes": [], "tarifas_gramo
 _COOLDOWN_PRECIOS = 60        # seg mínimos entre lecturas reales de precios
 _TTL_TABLA = 300              # seg de vida de la tabla en caché
 _ult_lectura_precios = 0.0    # time.monotonic() de la última lectura real
+
+# Relectura AUTOMATICA de los precios de Mayorista y Valor Tienda. Cambian poco
+# y el servidor comparte maquina con otros proyectos, asi que se releen como
+# mucho cada 4 h (lo mismo que tarda el Apps Script en copiar CORE -> espejo),
+# y solo cuando alguien usa la calculadora: sin uso no hay peticiones. El boton
+# "Actualizar precios" sigue forzando una lectura en el momento.
+_TTL_PRECIOS = 4 * 3600
+_REINTENTO_PRECIOS = 600      # si Google falla, no se reintenta antes de 10 min
+_ult_intento_auto = 0.0
 _tabla_cache = {"bloques": None, "ts": 0.0}
 
 
@@ -315,6 +324,7 @@ def api_retail(req: RetailReq):
 
 @app.post("/api/mayorista")
 def api_mayorista(req: MayoristaReq):
+    _releer_precios_si_viejos()
     if not _precios["datos"]:
         return {"error": "Precios no cargados. Presione 'Actualizar precios'."}
     joyas = []
@@ -347,8 +357,34 @@ def api_mayorista(req: MayoristaReq):
 # =======================================================
 # PRECIOS Y TABLA (Google Sheets, lado servidor)
 # =======================================================
+def _releer_precios_si_viejos():
+    """Relee los precios si la copia en memoria tiene mas de _TTL_PRECIOS.
+
+    Si la lectura falla se sigue con los precios que habia (mejor eso que dejar
+    la calculadora sin precios) y no se reintenta hasta pasados
+    _REINTENTO_PRECIOS, para no insistirle a Google en cada peticion.
+    """
+    global _ult_intento_auto
+    ahora = time.monotonic()
+    if _precios["datos"] is not None and ahora - _ult_lectura_precios < _TTL_PRECIOS:
+        return
+    if ahora - _ult_intento_auto < _REINTENTO_PRECIOS:
+        return
+    _ult_intento_auto = ahora
+    try:
+        res = actualizar_precios()
+    except Exception:
+        log.warning("Fallo la relectura automatica de precios", exc_info=True)
+        return
+    if isinstance(res, dict) and res.get("error"):
+        log.warning("Relectura automatica de precios fallida: %s", res["error"])
+    else:
+        log.info("Precios releidos automaticamente: %s", _precios["hora"])
+
+
 @app.get("/api/estado-precios")
 def estado_precios():
+    _releer_precios_si_viejos()
     return {
         "cargado": _precios["datos"] is not None,
         "hora": _precios["hora"],
@@ -384,9 +420,11 @@ def actualizar_precios():
         _precios["tarifas_gramo"] = res_tienda["tarifas"]
         _precios["calidades_tienda"] = res_tienda["calidades"]
     else:
-        _precios["tarifas_gramo"] = None
-        _precios["calidades_tienda"] = []
-        log.warning("No se pudieron cargar tarifas pricing_gramo: %s", res_tienda.get("error"))
+        # Se conservan las tarifas que ya habia: un fallo pasajero de Google
+        # (p. ej. cuota excedida) no debe dejar Valor Tienda sin datos hasta la
+        # siguiente lectura. Si nunca se cargaron, siguen en None.
+        log.warning("No se pudieron cargar tarifas pricing_gramo: %s%s", res_tienda.get("error"),
+                    " (se conservan las anteriores)" if _precios["tarifas_gramo"] else "")
 
     return {
         "ok": True, "hora": _precios["hora"], "tarifas_faltantes": _precios["tarifas_faltantes"],
@@ -420,6 +458,7 @@ def _puede_ver_bodega(nombre):
 
 @app.post("/api/precio-tienda")
 def api_precio_tienda(req: PrecioTiendaReq):
+    _releer_precios_si_viejos()
     if not _precios["tarifas_gramo"]:
         return {"error": "Tarifas no cargadas. Presione 'Actualizar precios'."}
     if not req.calidad:
